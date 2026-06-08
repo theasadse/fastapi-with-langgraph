@@ -10,11 +10,14 @@ from app.agents.nodes import (
     code_tool_node,
     critic_node,
     finalize_node,
+    human_clarification_node,
     intake_node,
     planner_node,
+    product_tool_node,
     repair_node,
     research_tool_node,
     route_after_critic,
+    route_after_human_clarification,
     route_after_safety,
     route_tools,
     safety_guard_node,
@@ -37,6 +40,10 @@ GRAPH_NODES = [
         "purpose": "Create the work plan and choose which tools are needed.",
     },
     {
+        "id": "human_clarification",
+        "purpose": "Ask the human for missing context before tool use.",
+    },
+    {
         "id": "tool_router",
         "purpose": "Route to the next pending tool or skip to synthesis.",
     },
@@ -51,6 +58,10 @@ GRAPH_NODES = [
     {
         "id": "code_tool",
         "purpose": "Inspect the local workspace structure for code context.",
+    },
+    {
+        "id": "product_tool",
+        "purpose": "Search the sample product catalog with human preferences.",
     },
     {
         "id": "synthesize",
@@ -75,14 +86,18 @@ GRAPH_EDGES = [
     {"from": "intake", "to": "safety_guard", "condition": "always"},
     {"from": "safety_guard", "to": "planner", "condition": "allowed"},
     {"from": "safety_guard", "to": "finalize", "condition": "refused"},
-    {"from": "planner", "to": "tool_router", "condition": "always"},
+    {"from": "planner", "to": "human_clarification", "condition": "always"},
+    {"from": "human_clarification", "to": "finalize", "condition": "missing human input"},
+    {"from": "human_clarification", "to": "tool_router", "condition": "enough context"},
     {"from": "tool_router", "to": "research_tool", "condition": "next tool is research"},
     {"from": "tool_router", "to": "calculator_tool", "condition": "next tool is calculator"},
     {"from": "tool_router", "to": "code_tool", "condition": "next tool is code"},
+    {"from": "tool_router", "to": "product_tool", "condition": "next tool is product"},
     {"from": "tool_router", "to": "synthesize", "condition": "no pending tools"},
     {"from": "research_tool", "to": "tool_router", "condition": "always"},
     {"from": "calculator_tool", "to": "tool_router", "condition": "always"},
     {"from": "code_tool", "to": "tool_router", "condition": "always"},
+    {"from": "product_tool", "to": "tool_router", "condition": "always"},
     {"from": "synthesize", "to": "critic", "condition": "always"},
     {"from": "critic", "to": "repair", "condition": "critique needs revision"},
     {"from": "critic", "to": "finalize", "condition": "critique passes or max revisions reached"},
@@ -95,14 +110,18 @@ GRAPH_MERMAID = """flowchart TD
     intake --> safety_guard
     safety_guard -- allowed --> planner
     safety_guard -- refused --> finalize
-    planner --> tool_router
+    planner --> human_clarification
+    human_clarification -- missing input --> finalize
+    human_clarification -- enough context --> tool_router
     tool_router -- research --> research_tool
     tool_router -- calculator --> calculator_tool
     tool_router -- code --> code_tool
+    tool_router -- product --> product_tool
     tool_router -- no pending tools --> synthesize
     research_tool --> tool_router
     calculator_tool --> tool_router
     code_tool --> tool_router
+    product_tool --> tool_router
     synthesize --> critic
     critic -- needs revision --> repair
     repair --> critic
@@ -117,10 +136,12 @@ def create_agent_graph() -> Any:
     workflow.add_node("intake", intake_node)
     workflow.add_node("safety_guard", safety_guard_node)
     workflow.add_node("planner", planner_node)
+    workflow.add_node("human_clarification", human_clarification_node)
     workflow.add_node("tool_router", tool_router_node)
     workflow.add_node("research_tool", research_tool_node)
     workflow.add_node("calculator_tool", calculator_tool_node)
     workflow.add_node("code_tool", code_tool_node)
+    workflow.add_node("product_tool", product_tool_node)
     workflow.add_node("synthesize", synthesize_node)
     workflow.add_node("critic", critic_node)
     workflow.add_node("repair", repair_node)
@@ -136,7 +157,15 @@ def create_agent_graph() -> Any:
             "refuse": "finalize",
         },
     )
-    workflow.add_edge("planner", "tool_router")
+    workflow.add_edge("planner", "human_clarification")
+    workflow.add_conditional_edges(
+        "human_clarification",
+        route_after_human_clarification,
+        {
+            "ask_human": "finalize",
+            "continue": "tool_router",
+        },
+    )
     workflow.add_conditional_edges(
         "tool_router",
         route_tools,
@@ -144,12 +173,14 @@ def create_agent_graph() -> Any:
             "research": "research_tool",
             "calculator": "calculator_tool",
             "code": "code_tool",
+            "product": "product_tool",
             "synthesize": "synthesize",
         },
     )
     workflow.add_edge("research_tool", "tool_router")
     workflow.add_edge("calculator_tool", "tool_router")
     workflow.add_edge("code_tool", "tool_router")
+    workflow.add_edge("product_tool", "tool_router")
     workflow.add_edge("synthesize", "critic")
     workflow.add_conditional_edges(
         "critic",
@@ -184,6 +215,7 @@ def run_agent(
         "route_history": [],
         "pending_tools": [],
         "completed_tools": [],
+        "human_questions": [],
         "artifacts": {},
     }
 

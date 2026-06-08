@@ -4,8 +4,8 @@ import re
 from typing import Any, Literal
 
 from app.agents.llm import get_model_client
-from app.agents.state import AgentState, ToolName
-from app.agents.tools import calculate_from_text, inspect_workspace, local_research
+from app.agents.state import AgentState, HumanQuestion, ToolName
+from app.agents.tools import calculate_from_text, inspect_workspace, local_research, search_products
 
 BLOCKED_PATTERNS = [
     "build malware",
@@ -21,7 +21,9 @@ def intake_node(state: AgentState) -> dict[str, Any]:
     normalized = re.sub(r"\s+", " ", request)
     lowered = normalized.lower()
 
-    if any(word in lowered for word in ["code", "api", "project", "fastapi", "langgraph"]):
+    if _is_product_search(lowered):
+        intent = "product_search"
+    elif any(word in lowered for word in ["code", "api", "project", "fastapi", "langgraph"]):
         intent = "software_delivery"
     elif any(word in lowered for word in ["calculate", "sum", "total", "average"]):
         intent = "calculation"
@@ -78,6 +80,10 @@ def planner_node(state: AgentState) -> dict[str, Any]:
     if "document" in lowered or "documentation" in lowered:
         plan.insert(2, "Prepare documentation that maps files, nodes, and edges.")
 
+    if state.get("intent") == "product_search":
+        plan.insert(1, "Ask the human for missing shopping preferences before searching.")
+        plan.insert(3, "Filter the sample catalog by budget, product type, and human preferences.")
+
     pending_tools = _select_tools(lowered)
 
     return {
@@ -91,6 +97,36 @@ def planner_node(state: AgentState) -> dict[str, Any]:
             "trace",
             f"planner: created {len(plan)} steps and selected tools {pending_tools or ['none']}",
         ),
+    }
+
+
+def human_clarification_node(state: AgentState) -> dict[str, Any]:
+    questions = _build_human_questions(state)
+
+    if questions:
+        question_lines = "\n".join(f"- {item['question']}" for item in questions)
+        return {
+            "status": "needs_input",
+            "human_questions": questions,
+            "final_answer": "I need a little more information before I continue:\n" + question_lines,
+            "trace": _append(
+                state,
+                "trace",
+                f"human_clarification: asking {len(questions)} question(s)",
+            ),
+            "route_history": _append(state, "route_history", "human_clarification->finalize"),
+        }
+
+    artifacts = dict(state.get("artifacts", {}))
+    answers = _human_answers(state)
+    if answers:
+        artifacts["human_input"] = answers
+
+    return {
+        "artifacts": artifacts,
+        "human_questions": [],
+        "trace": _append(state, "trace", "human_clarification: enough context to continue"),
+        "route_history": _append(state, "route_history", "human_clarification->tool_router"),
     }
 
 
@@ -137,6 +173,19 @@ def code_tool_node(state: AgentState) -> dict[str, Any]:
         "pending_tools": _remove_current_tool(state, "code"),
         "completed_tools": _append(state, "completed_tools", "code"),
         "trace": _append(state, "trace", "code_tool: inspected workspace structure"),
+    }
+
+
+def product_tool_node(state: AgentState) -> dict[str, Any]:
+    query = state.get("normalized_request", state["request"])
+    artifacts = dict(state.get("artifacts", {}))
+    artifacts["products"] = search_products(query, state.get("context", {}))
+
+    return {
+        "artifacts": artifacts,
+        "pending_tools": _remove_current_tool(state, "product"),
+        "completed_tools": _append(state, "completed_tools", "product"),
+        "trace": _append(state, "trace", "product_tool: searched sample product catalog"),
     }
 
 
@@ -239,6 +288,13 @@ def repair_node(state: AgentState) -> dict[str, Any]:
 def finalize_node(state: AgentState) -> dict[str, Any]:
     safety = state.get("safety", {"allowed": True})
 
+    if state.get("status") == "needs_input":
+        return {
+            "final_answer": state.get("final_answer", "The agent needs more human input."),
+            "status": "needs_input",
+            "trace": _append(state, "trace", "finalize: waiting for human input"),
+        }
+
     if not safety.get("allowed", True):
         answer = (
             "I cannot help with that request because it matches a blocked safety pattern. "
@@ -267,7 +323,13 @@ def route_after_safety(state: AgentState) -> Literal["refuse", "plan"]:
     return "plan"
 
 
-def route_tools(state: AgentState) -> Literal["research", "calculator", "code", "synthesize"]:
+def route_after_human_clarification(state: AgentState) -> Literal["ask_human", "continue"]:
+    if state.get("status") == "needs_input":
+        return "ask_human"
+    return "continue"
+
+
+def route_tools(state: AgentState) -> Literal["research", "calculator", "code", "product", "synthesize"]:
     pending = state.get("pending_tools", [])
     if not pending:
         return "synthesize"
@@ -283,6 +345,8 @@ def route_after_critic(state: AgentState) -> Literal["repair", "finalize"]:
 def _select_tools(lowered_request: str) -> list[ToolName]:
     tools: list[ToolName] = []
 
+    if _is_product_search(lowered_request):
+        tools.append("product")
     if any(
         word in lowered_request
         for word in ["document", "docs", "explain", "architecture", "agent", "node", "edge", "workflow"]
@@ -297,6 +361,57 @@ def _select_tools(lowered_request: str) -> list[ToolName]:
         tools.append("code")
 
     return tools
+
+
+def _build_human_questions(state: AgentState) -> list[HumanQuestion]:
+    if state.get("intent") != "product_search":
+        return []
+
+    request = state.get("normalized_request", state["request"]).lower()
+    answers = _human_answers(state)
+    questions: list[HumanQuestion] = []
+
+    if not answers.get("product_type") and not _request_mentions_product_type(request):
+        questions.append(
+            {
+                "id": "product_type",
+                "question": "What product type should I search for?",
+                "type": "text",
+                "options": [],
+                "required": True,
+            }
+        )
+
+    if not answers.get("color") and not _request_mentions_color(request):
+        questions.append(
+            {
+                "id": "color",
+                "question": "Which color do you want?",
+                "type": "choice",
+                "options": ["black", "white", "blue", "green", "any"],
+                "required": True,
+            }
+        )
+
+    if _request_mentions_budget(request) and not answers.get("strict_budget"):
+        questions.append(
+            {
+                "id": "strict_budget",
+                "question": "Should I only show products under the stated budget?",
+                "type": "yes_no",
+                "options": ["yes", "no"],
+                "required": True,
+            }
+        )
+
+    return questions
+
+
+def _human_answers(state: AgentState) -> dict[str, Any]:
+    raw_answers = state.get("context", {}).get("human_answers", {})
+    if not isinstance(raw_answers, dict):
+        return {}
+    return {str(key): value for key, value in raw_answers.items() if value not in ("", None)}
 
 
 def _remove_current_tool(state: AgentState, tool: ToolName) -> list[ToolName]:
@@ -314,18 +429,20 @@ def _append(state: AgentState, key: str, value: Any) -> list[Any]:
 
 def _local_draft(state: AgentState) -> str:
     request = state.get("normalized_request", state["request"])
+    product_artifact = state.get("artifacts", {}).get("products")
+    product_section = _format_product_recommendations(product_artifact)
+    recommendation = _format_recommended_answer(state, product_artifact)
     return "\n\n".join(
         [
             "Summary:\n"
             f"I treated the request as a {state.get('intent', 'general')} task and ran a "
-            "LangGraph workflow that plans, uses tools, drafts, critiques, and finalizes.",
+            "LangGraph workflow that plans, can ask for human input, uses tools, drafts, "
+            "critiques, and finalizes.",
             "User request:\n" + request,
             "Plan:\n" + _format_plan(state.get("plan", [])),
             "Tool findings:\n" + _format_artifacts(state.get("artifacts", {})),
-            "Recommended answer:\n"
-            "Build the FastAPI service around the compiled LangGraph agent. Keep node logic "
-            "small and testable, keep graph wiring centralized, and document every dynamic "
-            "route so future maintainers can see why the agent moved from one node to the next.",
+            product_section,
+            "Recommended answer:\n" + recommendation,
         ]
     )
 
@@ -344,3 +461,119 @@ def _format_artifacts(artifacts: dict[str, Any]) -> str:
     for name, value in artifacts.items():
         lines.append(f"- {name}: {value}")
     return "\n".join(lines)
+
+
+def _format_product_recommendations(product_artifact: Any) -> str:
+    if not isinstance(product_artifact, dict):
+        return "Product recommendations:\n- No product search was requested."
+
+    filters = product_artifact.get("applied_filters", {})
+    matches = product_artifact.get("matches", [])
+    alternatives = product_artifact.get("alternatives", [])
+    filter_line = (
+        "Applied filters: product_type={product_type}, color={color}, budget=${budget:.2f}, "
+        "strict_budget={strict_budget}".format(
+            product_type=filters.get("product_type", "any"),
+            color=filters.get("color", "any"),
+            budget=float(filters.get("budget", 50.0)),
+            strict_budget=filters.get("strict_budget", True),
+        )
+    )
+
+    if not matches:
+        if not alternatives:
+            return (
+                "Product recommendations:\n"
+                f"- {filter_line}\n"
+                "- No exact sample-catalog match was found. Try changing color, product type, or budget."
+            )
+        return "Product recommendations:\n" + "\n".join(
+            [
+                f"- {filter_line}",
+                "- No exact match was found, so these relaxed alternatives are shown:",
+                *_format_product_lines(alternatives),
+            ]
+        )
+
+    lines = [f"- {filter_line}", *_format_product_lines(matches)]
+    if alternatives:
+        lines.append("- Other close alternatives:")
+        lines.extend(_format_product_lines(alternatives))
+    return "Product recommendations:\n" + "\n".join(lines)
+
+
+def _format_recommended_answer(state: AgentState, product_artifact: Any) -> str:
+    if state.get("intent") == "product_search" and isinstance(product_artifact, dict):
+        products = product_artifact.get("matches", []) or product_artifact.get("alternatives", [])
+        if products:
+            first = products[0]
+            budget_note = (
+                " It is over the stated budget, but you allowed flexible budget results."
+                if first.get("over_budget")
+                else ""
+            )
+            return (
+                "I recommend {name} because it matches the human preferences and stays "
+                "closest to the ${budget:.2f} budget.{budget_note}".format(
+                    name=first["name"],
+                    budget=product_artifact.get("budget", 50.0),
+                    budget_note=budget_note,
+                )
+            )
+        return "I could not find a matching product in the sample catalog with the current constraints."
+
+    return (
+        "Build the FastAPI service around the compiled LangGraph agent. Keep node logic "
+        "small and testable, keep graph wiring centralized, and document every dynamic "
+        "route so future maintainers can see why the agent moved from one node to the next."
+    )
+
+
+def _format_product_lines(products: list[dict[str, Any]]) -> list[str]:
+    lines = []
+    for product in products:
+        budget_marker = "over budget" if product.get("over_budget") else "within budget"
+        fallback = f", {product['fallback_reason']}" if product.get("fallback_reason") else ""
+        lines.append(
+            "- {name} (${price:.2f}, {color}, {budget_marker}{fallback}): {reason}".format(
+                name=product["name"],
+                price=product["price"],
+                color=product["color"],
+                budget_marker=budget_marker,
+                fallback=fallback,
+                reason=product["reason"],
+            )
+        )
+    return lines
+
+
+def _is_product_search(lowered_request: str) -> bool:
+    shopping_words = ["find", "buy", "shop", "search", "recommend", "product", "item"]
+    budget_words = ["under", "below", "less than", "$", "dollar", "budget"]
+    return any(word in lowered_request for word in shopping_words) and any(
+        word in lowered_request for word in budget_words
+    )
+
+
+def _request_mentions_product_type(lowered_request: str) -> bool:
+    product_words = [
+        "mouse",
+        "speaker",
+        "earbuds",
+        "headphone",
+        "headphones",
+        "lamp",
+        "bottle",
+        "backpack",
+        "bag",
+    ]
+    return any(word in lowered_request for word in product_words)
+
+
+def _request_mentions_color(lowered_request: str) -> bool:
+    colors = ["black", "white", "blue", "green", "red", "yellow", "gray", "grey", "any color"]
+    return any(color in lowered_request for color in colors)
+
+
+def _request_mentions_budget(lowered_request: str) -> bool:
+    return bool(re.search(r"(?:under|below|less than|budget|[$])\s*\$?\s*\d+", lowered_request))

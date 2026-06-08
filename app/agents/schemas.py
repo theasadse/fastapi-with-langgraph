@@ -29,6 +29,7 @@ class AgentRequest(BaseModel):
 class AgentResponse(BaseModel):
     answer: str
     status: str
+    human_questions: list[dict[str, Any]]
     plan: list[str]
     artifacts: dict[str, Any]
     critique: dict[str, Any]

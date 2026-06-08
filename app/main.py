@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 
 from app.agents.graph import (
     GRAPH_EDGES,
@@ -10,6 +10,7 @@ from app.agents.graph import (
     run_agent,
 )
 from app.agents.schemas import AgentRequest, AgentResponse, GraphDescription
+from app.ui import render_test_ui
 
 app = FastAPI(
     title="FastAPI With LangGraph",
@@ -18,9 +19,9 @@ app = FastAPI(
 )
 
 
-@app.get("/", include_in_schema=False)
-def root() -> RedirectResponse:
-    return RedirectResponse(url="/docs")
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def root() -> HTMLResponse:
+    return HTMLResponse(render_test_ui())
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -56,6 +57,7 @@ def run_delivery_agent(payload: AgentRequest) -> AgentResponse:
     return AgentResponse(
         answer=result.get("final_answer", ""),
         status=result.get("status", "error"),
+        human_questions=result.get("human_questions", []),
         plan=result.get("plan", []),
         artifacts=result.get("artifacts", {}),
         critique=result.get("critique", {}),
