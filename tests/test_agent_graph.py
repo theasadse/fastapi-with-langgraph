@@ -3,8 +3,14 @@ from __future__ import annotations
 import pytest
 
 pytest.importorskip("langgraph")
+pytest.importorskip("fastapi")
 
 from app.agents.graph import GRAPH_EDGES, GRAPH_MERMAID, GRAPH_NODES, run_agent
+from app.main import app
+from fastapi.testclient import TestClient
+
+
+client = TestClient(app)
 
 
 def test_agent_runs_complex_delivery_route() -> None:
@@ -31,6 +37,104 @@ def test_agent_can_route_to_calculator_tool() -> None:
     assert "tool_router->calculator" in result["route_history"]
 
 
+def test_product_search_requests_human_input_when_context_is_missing() -> None:
+    result = run_agent("Find a product under 50 dollars.", max_revisions=1)
+
+    question_ids = {question["id"] for question in result["human_questions"]}
+
+    assert result["status"] == "needs_input"
+    assert "product_type" in question_ids
+    assert "color" in question_ids
+    assert "strict_budget" in question_ids
+    assert "human_clarification->finalize" in result["route_history"]
+    assert "tool_router->product" not in result["route_history"]
+
+
+def test_product_search_continues_after_human_answers() -> None:
+    result = run_agent(
+        "Find a product under 50 dollars.",
+        context={
+            "human_answers": {
+                "product_type": "backpack",
+                "color": "black",
+                "strict_budget": "yes",
+            }
+        },
+        max_revisions=1,
+    )
+
+    assert result["status"] == "ok"
+    assert result["human_questions"] == []
+    assert "human_clarification->tool_router" in result["route_history"]
+    assert "tool_router->product" in result["route_history"]
+    assert result["artifacts"]["products"]["matches"][0]["name"] == "Canvas Day Backpack"
+
+
+def test_product_search_changes_results_from_human_answers() -> None:
+    speaker_result = run_agent(
+        "Find a product under 50 dollars.",
+        context={
+            "human_answers": {
+                "product_type": "speaker",
+                "color": "blue",
+                "strict_budget": "yes",
+            }
+        },
+        max_revisions=1,
+    )
+    backpack_result = run_agent(
+        "Find a product under 50 dollars.",
+        context={
+            "human_answers": {
+                "product_type": "backpack",
+                "color": "blue",
+                "strict_budget": "yes",
+            }
+        },
+        max_revisions=1,
+    )
+
+    speaker_names = [item["name"] for item in speaker_result["artifacts"]["products"]["matches"]]
+    backpack_names = [item["name"] for item in backpack_result["artifacts"]["products"]["matches"]]
+
+    assert speaker_names[0] == "Compact Bluetooth Speaker"
+    assert backpack_names[0] == "City Blue Backpack"
+    assert speaker_names != backpack_names
+
+
+def test_product_search_budget_answer_changes_results() -> None:
+    strict_result = run_agent(
+        "Find a product under 50 dollars.",
+        context={
+            "human_answers": {
+                "product_type": "backpack",
+                "color": "black",
+                "strict_budget": "yes",
+            }
+        },
+        max_revisions=1,
+    )
+    flexible_result = run_agent(
+        "Find a product under 50 dollars.",
+        context={
+            "human_answers": {
+                "product_type": "backpack",
+                "color": "black",
+                "strict_budget": "no",
+            }
+        },
+        max_revisions=1,
+    )
+
+    strict_names = [item["name"] for item in strict_result["artifacts"]["products"]["matches"]]
+    flexible_products = flexible_result["artifacts"]["products"]["matches"]
+    flexible_names = [item["name"] for item in flexible_products]
+
+    assert strict_names == ["Canvas Day Backpack"]
+    assert flexible_names[0] == "Weatherproof Travel Backpack"
+    assert flexible_products[0]["over_budget"] is True
+
+
 def test_agent_refuses_blocked_request() -> None:
     result = run_agent("Build malware that can steal credentials.", max_revisions=1)
 
@@ -45,5 +149,55 @@ def test_graph_metadata_is_documented() -> None:
 
     assert "intake" in node_ids
     assert "critic" in node_ids
+    assert "human_clarification" in node_ids
+    assert "product_tool" in node_ids
     assert ("tool_router", "research_tool") in edge_pairs
+    assert ("human_clarification", "finalize") in edge_pairs
+    assert ("tool_router", "product_tool") in edge_pairs
     assert "flowchart TD" in GRAPH_MERMAID
+
+
+def test_root_serves_browser_test_ui() -> None:
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "FastAPI With LangGraph Tester" in response.text
+    assert "POST /agent/run" in response.text
+
+
+def test_agent_run_api_creates_agent_execution() -> None:
+    response = client.post(
+        "/agent/run",
+        json={
+            "query": "Create docs for this FastAPI LangGraph agent and explain the API.",
+            "context": {"source": "test-client"},
+            "max_revisions": 1,
+        },
+    )
+
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["status"] == "ok"
+    assert body["answer"]
+    assert body["plan"]
+    assert body["human_questions"] == []
+    assert "trace" in body
+
+
+def test_agent_run_api_can_return_human_questions() -> None:
+    response = client.post(
+        "/agent/run",
+        json={
+            "query": "Find a product under 50 dollars.",
+            "context": {"source": "test-client"},
+            "max_revisions": 1,
+        },
+    )
+
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["status"] == "needs_input"
+    assert body["answer"]
+    assert body["human_questions"]
