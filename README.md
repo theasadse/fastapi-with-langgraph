@@ -23,7 +23,8 @@ response.
 |-- docs/
 |   |-- ARCHITECTURE.md         # File-by-file and runtime overview
 |   |-- API_TESTING.md          # UI, Swagger, curl, and CRUD-style API notes
-|   `-- NODES_AND_EDGES.md      # Node and edge connection guide
+|   |-- NODES_AND_EDGES.md      # Node and edge connection guide
+|   `-- TOPICS.md               # Complete list of covered topics
 |-- tests/
 |   `-- test_agent_graph.py
 |-- pyproject.toml
@@ -129,6 +130,7 @@ with `over_budget: true`.
 - [Architecture](docs/ARCHITECTURE.md)
 - [API Testing](docs/API_TESTING.md)
 - [Nodes and Edges](docs/NODES_AND_EDGES.md)
+- [Covered Topics](docs/TOPICS.md)
 
 ## LangGraph References
 

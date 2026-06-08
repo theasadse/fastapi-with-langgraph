@@ -18,6 +18,7 @@ state, testable node functions, and explicit graph wiring.
 | `app/ui.py` | Returns the small HTML, CSS, and JavaScript browser UI for local API testing. |
 | `docs/API_TESTING.md` | Explains UI testing, Swagger testing, curl requests, and CRUD-style API mapping. |
 | `docs/NODES_AND_EDGES.md` | Documents every node and connection in the graph. |
+| `docs/TOPICS.md` | Lists every topic covered by the project and where to read about it. |
 | `tests/test_agent_graph.py` | Verifies successful routing, tool use, metadata, and refusal behavior. |
 
 ## Main Runtime Flow
