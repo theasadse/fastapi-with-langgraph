@@ -10,7 +10,7 @@ state, testable node functions, and explicit graph wiring.
 | --- | --- |
 | `app/main.py` | Creates the FastAPI app and exposes `/health`, `/agent/graph`, and `/agent/run`. |
 | `app/agents/graph.py` | Defines the LangGraph workflow, registers every node, connects edges, exports static graph metadata, and runs the compiled graph. |
-| `app/agents/nodes.py` | Holds the node functions that perform intake, safety checks, planning, human clarification, tool routing, synthesis, critique, repair, and finalization. |
+| `app/agents/nodes.py` | Holds the node functions that perform intake, safety checks, planning, base human clarification, product size clarification, tool routing, synthesis, critique, repair, and finalization. |
 | `app/agents/tools.py` | Provides local tool functions used by graph nodes: built-in research, safe arithmetic, workspace inspection, and sample product search. |
 | `app/agents/state.py` | Defines the shared `AgentState` typed dictionary passed between nodes. |
 | `app/agents/schemas.py` | Defines Pydantic request and response models for the API. |
@@ -28,7 +28,7 @@ state, testable node functions, and explicit graph wiring.
 3. `run_agent()` in `app/agents/graph.py` creates the initial `AgentState`.
 4. The compiled LangGraph workflow runs from `START` to `END`.
 5. Each node reads state and returns only the updates it owns.
-6. Conditional edges route based on safety, human context, pending tools, and critique results.
+6. Conditional edges route based on safety, base human context, product size context, pending tools, and critique results.
 7. If context is missing, the graph returns `status: needs_input` with human questions.
 8. FastAPI returns `AgentResponse` with the answer, questions, artifacts, trace, and route history.
 
@@ -84,7 +84,8 @@ This example includes the main patterns used in real agent systems:
 
 - A typed state object shared across nodes.
 - A safety branch before planning.
-- A human clarification branch before tool use.
+- A base human clarification branch before tool use.
+- A product size clarification branch for shirts and shoes.
 - A planner that selects tools dynamically.
 - A tool loop controlled by conditional edges.
 - Multiple tool nodes with separate responsibilities.

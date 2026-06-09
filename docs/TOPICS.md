@@ -46,6 +46,7 @@ topics.
 | Safety guard and refusal path | `safety_guard_node` |
 | Planning | `planner_node` |
 | Human clarification | `human_clarification_node` |
+| Product size clarification | `product_size_clarification_node` |
 | Tool routing | `tool_router_node` |
 | Research tool | `research_tool_node` |
 | Calculator tool | `calculator_tool_node` |
@@ -64,6 +65,8 @@ topics.
 | Text questions | `product_type` question |
 | Choice questions | `color` question |
 | Yes/no questions | `strict_budget` question |
+| Shirt size questions | `size` question for `product_type=shirt` |
+| Shoe size questions | `size` question for `product_type=shoe` |
 | Continuing with answers | `context.human_answers` in `docs/API_TESTING.md` |
 | UI follow-up form | `app/ui.py` |
 
@@ -74,6 +77,7 @@ topics.
 | Sample product catalog | `PRODUCT_CATALOG` in `app/agents/tools.py` |
 | Product type filtering | `search_products()` |
 | Color filtering | `search_products()` |
+| Shirt and shoe size filtering | `size` in `context.human_answers` |
 | Strict budget filtering | `strict_budget=yes` |
 | Flexible budget filtering | `strict_budget=no` |
 | Different products from different answers | `docs/API_TESTING.md` |
@@ -124,7 +128,12 @@ topics.
 | Graph route tests | `tests/test_agent_graph.py` |
 | Calculator route test | `test_agent_can_route_to_calculator_tool` |
 | Human input required test | `test_product_search_requests_human_input_when_context_is_missing` |
+| Generic product prompt test | `test_generic_product_prompts_share_product_search_flow` |
 | Human answer continuation test | `test_product_search_continues_after_human_answers` |
+| Shirt size follow-up test | `test_shirt_answer_requests_size_before_product_search` |
+| Shirt size result test | `test_shirt_search_uses_human_size_answer` |
+| Shoe size follow-up test | `test_shoe_answer_requests_size_before_product_search` |
+| Shoe size result test | `test_shoe_search_uses_human_size_answer` |
 | Different product result tests | `test_product_search_changes_results_from_human_answers` |
 | Flexible budget test | `test_product_search_budget_answer_changes_results` |
 | Refusal test | `test_agent_refuses_blocked_request` |

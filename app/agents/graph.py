@@ -13,11 +13,13 @@ from app.agents.nodes import (
     human_clarification_node,
     intake_node,
     planner_node,
+    product_size_clarification_node,
     product_tool_node,
     repair_node,
     research_tool_node,
     route_after_critic,
     route_after_human_clarification,
+    route_after_product_size_clarification,
     route_after_safety,
     route_tools,
     safety_guard_node,
@@ -41,7 +43,11 @@ GRAPH_NODES = [
     },
     {
         "id": "human_clarification",
-        "purpose": "Ask the human for missing context before tool use.",
+        "purpose": "Ask the human for missing product requirements before tool use.",
+    },
+    {
+        "id": "product_size_clarification",
+        "purpose": "Ask for shirt or shoe size when the selected product needs sizing.",
     },
     {
         "id": "tool_router",
@@ -88,7 +94,9 @@ GRAPH_EDGES = [
     {"from": "safety_guard", "to": "finalize", "condition": "refused"},
     {"from": "planner", "to": "human_clarification", "condition": "always"},
     {"from": "human_clarification", "to": "finalize", "condition": "missing human input"},
-    {"from": "human_clarification", "to": "tool_router", "condition": "enough context"},
+    {"from": "human_clarification", "to": "product_size_clarification", "condition": "base product context is complete"},
+    {"from": "product_size_clarification", "to": "finalize", "condition": "missing size input"},
+    {"from": "product_size_clarification", "to": "tool_router", "condition": "size context is complete"},
     {"from": "tool_router", "to": "research_tool", "condition": "next tool is research"},
     {"from": "tool_router", "to": "calculator_tool", "condition": "next tool is calculator"},
     {"from": "tool_router", "to": "code_tool", "condition": "next tool is code"},
@@ -112,7 +120,9 @@ GRAPH_MERMAID = """flowchart TD
     safety_guard -- refused --> finalize
     planner --> human_clarification
     human_clarification -- missing input --> finalize
-    human_clarification -- enough context --> tool_router
+    human_clarification -- enough base context --> product_size_clarification
+    product_size_clarification -- missing size --> finalize
+    product_size_clarification -- enough size context --> tool_router
     tool_router -- research --> research_tool
     tool_router -- calculator --> calculator_tool
     tool_router -- code --> code_tool
@@ -137,6 +147,7 @@ def create_agent_graph() -> Any:
     workflow.add_node("safety_guard", safety_guard_node)
     workflow.add_node("planner", planner_node)
     workflow.add_node("human_clarification", human_clarification_node)
+    workflow.add_node("product_size_clarification", product_size_clarification_node)
     workflow.add_node("tool_router", tool_router_node)
     workflow.add_node("research_tool", research_tool_node)
     workflow.add_node("calculator_tool", calculator_tool_node)
@@ -161,6 +172,14 @@ def create_agent_graph() -> Any:
     workflow.add_conditional_edges(
         "human_clarification",
         route_after_human_clarification,
+        {
+            "ask_human": "finalize",
+            "continue": "product_size_clarification",
+        },
+    )
+    workflow.add_conditional_edges(
+        "product_size_clarification",
+        route_after_product_size_clarification,
         {
             "ask_human": "finalize",
             "continue": "tool_router",
