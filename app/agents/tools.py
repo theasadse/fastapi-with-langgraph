@@ -32,6 +32,46 @@ KNOWLEDGE_BASE = {
 
 PRODUCT_CATALOG = [
     {
+        "name": "Classic Cotton Shirt",
+        "category": "shirt",
+        "price": 24.99,
+        "color": "white",
+        "size_options": ["S", "M", "L", "XL"],
+        "reason": "Simple daily shirt available in common sizes.",
+    },
+    {
+        "name": "Black Oxford Shirt",
+        "category": "shirt",
+        "price": 38.99,
+        "color": "black",
+        "size_options": ["M", "L", "XL"],
+        "reason": "Dressier shirt option while staying under 40.",
+    },
+    {
+        "name": "Blue Running Shoe",
+        "category": "shoe",
+        "price": 39.99,
+        "color": "blue",
+        "size_options": ["8", "9", "10", "11"],
+        "reason": "Lightweight shoe option available under 40.",
+    },
+    {
+        "name": "Everyday Black Shoe",
+        "category": "shoe",
+        "price": 47.99,
+        "color": "black",
+        "size_options": ["7", "8", "9", "10"],
+        "reason": "Comfortable everyday shoe under 50.",
+    },
+    {
+        "name": "Premium Trail Shoe",
+        "category": "shoe",
+        "price": 64.99,
+        "color": "green",
+        "size_options": ["9", "10", "11"],
+        "reason": "More durable shoe when the budget is flexible.",
+    },
+    {
         "name": "Everyday Wireless Mouse",
         "category": "mouse",
         "price": 24.99,
@@ -212,8 +252,9 @@ def inspect_workspace(root: Path | None = None, max_files: int = 60) -> dict[str
 def search_products(query: str, context: dict[str, Any]) -> dict[str, Any]:
     answers = context.get("human_answers", {})
     budget = _extract_budget(query) or _to_float(answers.get("budget")) or 50.0
-    color = _normalize_optional_filter(answers.get("color"))
-    product_type = _normalize_optional_filter(answers.get("product_type"))
+    color = _normalize_optional_filter(answers.get("color")) or _extract_color(query)
+    product_type = _extract_product_type(query, answers)
+    size = _normalize_size(answers.get("size")) or _extract_size(query, product_type)
     strict_budget = str(answers.get("strict_budget", "yes")).strip().lower() != "no"
 
     exact_matches = []
@@ -226,17 +267,22 @@ def search_products(query: str, context: dict[str, Any]) -> dict[str, Any]:
             continue
         if not _filter_product_type(product, product_type):
             continue
+        if not _filter_size(product, size):
+            continue
         exact_matches.append(product_view)
 
     if not exact_matches:
         for product in PRODUCT_CATALOG:
             if not _budget_allowed(product, budget, strict_budget):
                 continue
-            if product_type and _filter_product_type(product, product_type):
+            if product_type and _filter_product_type(product, product_type) and _filter_size(product, size):
                 relaxed_matches.append(_product_view(product, budget, fallback_reason="color relaxed"))
                 continue
-            if color and _filter_color(product, color):
+            if color and _filter_color(product, color) and _filter_size(product, size):
                 relaxed_matches.append(_product_view(product, budget, fallback_reason="product type relaxed"))
+                continue
+            if size and _filter_size(product, size):
+                relaxed_matches.append(_product_view(product, budget, fallback_reason="product type and color relaxed"))
 
     matches = _rank_products(exact_matches, strict_budget)
     alternatives = _rank_products(relaxed_matches, strict_budget)
@@ -246,11 +292,13 @@ def search_products(query: str, context: dict[str, Any]) -> dict[str, Any]:
         "strict_budget": strict_budget,
         "color": color or "not specified",
         "product_type": product_type or "not specified",
+        "size": size or "not specified",
         "applied_filters": {
             "budget": budget,
             "strict_budget": strict_budget,
             "color": color or "any",
             "product_type": product_type or "any",
+            "size": size or "any",
         },
         "matches": matches[:5],
         "alternatives": alternatives[:5],
@@ -275,6 +323,51 @@ def _extract_budget(text: str) -> float | None:
     return _to_float(match.group(1))
 
 
+def _extract_color(text: str) -> str:
+    lowered = text.lower()
+    for color in ["black", "white", "blue", "green", "red", "yellow", "gray", "grey"]:
+        if re.search(rf"\b{color}\b", lowered):
+            return "gray" if color == "grey" else color
+    return ""
+
+
+def _extract_product_type(query: str, answers: dict[str, Any]) -> str:
+    answered = _normalize_optional_filter(answers.get("product_type") or answers.get("product_name"))
+    if answered:
+        return _normalize_product_type(answered)
+
+    lowered = query.lower()
+    for product_word in [
+        "shirt",
+        "shirts",
+        "shoe",
+        "shoes",
+        "mouse",
+        "speaker",
+        "earbuds",
+        "headphone",
+        "headphones",
+        "lamp",
+        "bottle",
+        "backpack",
+        "bag",
+    ]:
+        if re.search(rf"\b{re.escape(product_word)}\b", lowered):
+            return _normalize_product_type(product_word)
+    return ""
+
+
+def _extract_size(query: str, product_type: str) -> str:
+    lowered = query.lower()
+    if product_type == "shirt":
+        match = re.search(r"\b(?:size\s*)?(s|m|l|xl)\b", lowered, flags=re.IGNORECASE)
+        return match.group(1).upper() if match else ""
+    if product_type == "shoe":
+        match = re.search(r"\b(?:size\s*)?(7|8|9|10|11)\b", lowered)
+        return match.group(1) if match else ""
+    return ""
+
+
 def _to_float(value: Any) -> float | None:
     try:
         return float(value)
@@ -289,6 +382,32 @@ def _normalize_optional_filter(value: Any) -> str:
     return normalized
 
 
+def _normalize_size(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return raw.upper() if raw.lower() in {"s", "m", "l", "xl"} else raw
+
+
+def _normalize_product_type(product_type: str) -> str:
+    aliases = {
+        "shirts": "shirt",
+        "tshirt": "shirt",
+        "t-shirt": "shirt",
+        "tee": "shirt",
+        "shoes": "shoe",
+        "sneaker": "shoe",
+        "sneakers": "shoe",
+        "bag": "backpack",
+        "bags": "backpack",
+        "headphone": "earbuds",
+        "headphones": "earbuds",
+        "earphone": "earbuds",
+        "earphones": "earbuds",
+    }
+    return aliases.get(product_type, product_type)
+
+
 def _budget_allowed(product: dict[str, Any], budget: float, strict_budget: bool) -> bool:
     if strict_budget:
         return product["price"] <= budget
@@ -301,6 +420,10 @@ def _filter_color(product: dict[str, Any], color: str) -> bool:
 
 def _filter_product_type(product: dict[str, Any], product_type: str) -> bool:
     return not product_type or _product_matches(product_type, product["category"], product["name"])
+
+
+def _filter_size(product: dict[str, Any], size: str) -> bool:
+    return not size or size in product.get("size_options", [])
 
 
 def _product_view(product: dict[str, Any], budget: float, fallback_reason: str | None = None) -> dict[str, Any]:
@@ -328,6 +451,13 @@ def _product_search_message(matches: list[dict[str, Any]], alternatives: list[di
 
 def _product_matches(user_text: str, category: str, name: str) -> bool:
     aliases = {
+        "shirts": {"shirt"},
+        "tshirt": {"shirt"},
+        "t-shirt": {"shirt"},
+        "tee": {"shirt"},
+        "shoes": {"shoe"},
+        "sneaker": {"shoe"},
+        "sneakers": {"shoe"},
         "headphone": {"earbuds"},
         "headphones": {"earbuds"},
         "earphone": {"earbuds"},

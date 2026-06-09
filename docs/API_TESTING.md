@@ -105,7 +105,7 @@ The agent returns `status: "needs_input"` and structured questions:
   "human_questions": [
     {
       "id": "product_type",
-      "question": "What product type should I search for?",
+      "question": "Which product name or type should I search for?",
       "type": "text"
     },
     {
@@ -144,7 +144,60 @@ curl -X POST http://127.0.0.1:8000/agent/run \
 ```
 
 That second request continues past the human clarification step and runs the
-product tool. The response includes product matches in `artifacts.products`.
+product size clarification step. If the product is `shirt` or `shoe` and size is
+missing, the agent returns another `needs_input` response before it runs the
+product tool.
+
+For example, this request has product name/type but no size:
+
+```bash
+curl -X POST http://127.0.0.1:8000/agent/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Give me product under 40 dollar.",
+    "context": {
+      "human_answers": {
+        "product_type": "shirt",
+        "color": "black",
+        "strict_budget": "yes"
+      }
+    },
+    "max_revisions": 1
+  }'
+```
+
+The agent asks:
+
+```json
+{
+  "status": "needs_input",
+  "human_questions": [
+    {
+      "id": "size",
+      "question": "What shirt size do you want?",
+      "type": "choice",
+      "options": ["S", "M", "L", "XL"]
+    }
+  ]
+}
+```
+
+Add the size to continue:
+
+```json
+{
+  "context": {
+    "human_answers": {
+      "product_type": "shirt",
+      "color": "black",
+      "size": "M",
+      "strict_budget": "yes"
+    }
+  }
+}
+```
+
+The final response includes product matches in `artifacts.products`.
 
 Different human answers change the product results:
 
@@ -154,6 +207,8 @@ Different human answers change the product results:
 | `product_type=backpack`, `color=blue`, `strict_budget=yes` | `City Blue Backpack` |
 | `product_type=backpack`, `color=black`, `strict_budget=yes` | `Canvas Day Backpack` |
 | `product_type=backpack`, `color=black`, `strict_budget=no` | `Weatherproof Travel Backpack` |
+| `product_type=shirt`, `color=black`, `size=M`, `strict_budget=yes` | `Black Oxford Shirt` |
+| `product_type=shoe`, `color=blue`, `size=9`, `strict_budget=yes` | `Blue Running Shoe` |
 
 The `strict_budget=no` answer allows flexible budget results. Those products are
 marked with `over_budget: true` in `artifacts.products.matches`.
@@ -213,12 +268,13 @@ The compiled LangGraph workflow then runs through these main phases:
 1. `intake`: normalize the query and detect intent.
 2. `safety_guard`: allow or refuse the request.
 3. `planner`: create a plan and choose tools.
-4. `human_clarification`: ask for missing human context when needed.
-5. `tool_router`: run selected tools until none remain.
-6. `synthesize`: create the draft answer.
-7. `critic`: score the draft and decide whether repair is needed.
-8. `repair`: improve the draft when needed.
-9. `finalize`: return the final API response.
+4. `human_clarification`: ask for missing base product context when needed.
+5. `product_size_clarification`: ask for shirt or shoe size when needed.
+6. `tool_router`: run selected tools until none remain.
+7. `synthesize`: create the draft answer.
+8. `critic`: score the draft and decide whether repair is needed.
+9. `repair`: improve the draft when needed.
+10. `finalize`: return the final API response.
 
 The endpoint converts the final graph state into `AgentResponse`, then returns
 JSON to the browser UI, Swagger, or curl.

@@ -13,7 +13,9 @@ flowchart TD
     safety_guard -- refused --> finalize
     planner --> human_clarification
     human_clarification -- missing input --> finalize
-    human_clarification -- enough context --> tool_router
+    human_clarification -- enough base context --> product_size_clarification
+    product_size_clarification -- missing size --> finalize
+    product_size_clarification -- enough size context --> tool_router
     tool_router -- research --> research_tool
     tool_router -- calculator --> calculator_tool
     tool_router -- code --> code_tool
@@ -37,12 +39,13 @@ flowchart TD
 | `intake` | `intake_node` | Cleans the user request and classifies the broad intent. |
 | `safety_guard` | `safety_guard_node` | Checks for blocked request patterns before the agent plans or uses tools. |
 | `planner` | `planner_node` | Builds the plan and chooses tools for the request. |
-| `human_clarification` | `human_clarification_node` | Asks the human for missing context, such as product type, color, or yes/no budget confirmation. |
+| `human_clarification` | `human_clarification_node` | Asks the human for missing base context, such as product name/type, color, or yes/no budget confirmation. |
+| `product_size_clarification` | `product_size_clarification_node` | Asks for shirt or shoe size when the selected product requires size. |
 | `tool_router` | `tool_router_node` | Looks at `pending_tools` and decides which tool should run next. |
 | `research_tool` | `research_tool_node` | Adds local knowledge-base facts to `artifacts["research"]`. |
 | `calculator_tool` | `calculator_tool_node` | Safely evaluates arithmetic and stores the result in `artifacts["calculation"]`. |
 | `code_tool` | `code_tool_node` | Inspects the current workspace and stores file metadata in `artifacts["code"]`. |
-| `product_tool` | `product_tool_node` | Searches a small sample product catalog using budget, product type, color, and yes/no budget preference. |
+| `product_tool` | `product_tool_node` | Searches a small sample product catalog using budget, product type, color, size, and yes/no budget preference. |
 | `synthesize` | `synthesize_node` | Creates a draft answer from the plan and artifacts. |
 | `critic` | `critic_node` | Scores the draft and decides whether repair is needed. |
 | `repair` | `repair_node` | Adds missing sections or details identified by the critic. |
@@ -58,7 +61,9 @@ flowchart TD
 | `safety_guard` | `finalize` | Conditional | `route_after_safety()` returns `refuse`. |
 | `planner` | `human_clarification` | Normal | Planning always gives the human check a chance to inspect context. |
 | `human_clarification` | `finalize` | Conditional | `route_after_human_clarification()` returns `ask_human`. |
-| `human_clarification` | `tool_router` | Conditional | `route_after_human_clarification()` returns `continue`. |
+| `human_clarification` | `product_size_clarification` | Conditional | `route_after_human_clarification()` returns `continue`. |
+| `product_size_clarification` | `finalize` | Conditional | `route_after_product_size_clarification()` returns `ask_human`. |
+| `product_size_clarification` | `tool_router` | Conditional | `route_after_product_size_clarification()` returns `continue`. |
 | `tool_router` | `research_tool` | Conditional | `route_tools()` returns `research`. |
 | `tool_router` | `calculator_tool` | Conditional | `route_tools()` returns `calculator`. |
 | `tool_router` | `code_tool` | Conditional | `route_tools()` returns `code`. |
@@ -106,7 +111,7 @@ color, or whether the budget is strict. In that case, it returns:
   "human_questions": [
     {
       "id": "product_type",
-      "question": "What product type should I search for?",
+      "question": "Which product name or type should I search for?",
       "type": "text"
     },
     {
@@ -126,7 +131,28 @@ color, or whether the budget is strict. In that case, it returns:
 ```
 
 The next API call includes those answers in `context.human_answers`. Then the
-graph routes from `human_clarification` to `tool_router` and continues normally.
+graph routes from `human_clarification` to `product_size_clarification`.
+
+If the product type is `shirt` or `shoe`, the size node checks for a size before
+tool use. A shirt answer asks:
+
+```json
+{
+  "status": "needs_input",
+  "human_questions": [
+    {
+      "id": "size",
+      "question": "What shirt size do you want?",
+      "type": "choice",
+      "options": ["S", "M", "L", "XL"]
+    }
+  ]
+}
+```
+
+A shoe answer asks for shoe size with options `7`, `8`, `9`, `10`, and `11`.
+After size is present in `context.human_answers`, the graph routes to
+`tool_router` and continues normally.
 
 The product result changes from those answers. For example, blue speaker answers
 return `Compact Bluetooth Speaker`, while blue backpack answers return

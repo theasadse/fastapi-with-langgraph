@@ -23,7 +23,8 @@ response.
 |-- docs/
 |   |-- ARCHITECTURE.md         # File-by-file and runtime overview
 |   |-- API_TESTING.md          # UI, Swagger, curl, and CRUD-style API notes
-|   `-- NODES_AND_EDGES.md      # Node and edge connection guide
+|   |-- NODES_AND_EDGES.md      # Node and edge connection guide
+|   `-- TOPICS.md               # Complete list of covered topics
 |-- tests/
 |   `-- test_agent_graph.py
 |-- pyproject.toml
@@ -98,7 +99,7 @@ Find a product under 50 dollars.
 
 The first run returns `status: needs_input` with questions such as:
 
-- What product type should I search for?
+- Which product name or type should I search for?
 - Which color do you want?
 - Should I only show products under the stated budget?
 
@@ -119,6 +120,11 @@ After you answer, the UI sends a second `POST /agent/run` request with:
 Then the graph continues to the product tool and returns matching products from
 the sample catalog.
 
+If the product is a `shirt` or `shoe`, the graph can pause a second time and ask
+for size before searching. For example, `product_type=shirt` asks for shirt size
+with `S`, `M`, `L`, or `XL`; `product_type=shoe` asks for shoe size with `7`,
+`8`, `9`, `10`, or `11`.
+
 Different answers produce different products. For example, blue speaker answers
 return `Compact Bluetooth Speaker`, blue backpack answers return
 `City Blue Backpack`, and flexible budget answers can return premium products
@@ -129,6 +135,7 @@ with `over_budget: true`.
 - [Architecture](docs/ARCHITECTURE.md)
 - [API Testing](docs/API_TESTING.md)
 - [Nodes and Edges](docs/NODES_AND_EDGES.md)
+- [Covered Topics](docs/TOPICS.md)
 
 ## LangGraph References
 

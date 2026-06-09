@@ -50,6 +50,21 @@ def test_product_search_requests_human_input_when_context_is_missing() -> None:
     assert "tool_router->product" not in result["route_history"]
 
 
+def test_generic_product_prompts_share_product_search_flow() -> None:
+    give_result = run_agent("Give me product under 50 dollar.", max_revisions=1)
+    find_result = run_agent("Find product under 40 dollar.", max_revisions=1)
+
+    assert give_result["intent"] == "product_search"
+    assert find_result["intent"] == "product_search"
+    assert give_result["status"] == "needs_input"
+    assert find_result["status"] == "needs_input"
+    assert {question["id"] for question in give_result["human_questions"]} == {
+        "product_type",
+        "color",
+        "strict_budget",
+    }
+
+
 def test_product_search_continues_after_human_answers() -> None:
     result = run_agent(
         "Find a product under 50 dollars.",
@@ -65,9 +80,102 @@ def test_product_search_continues_after_human_answers() -> None:
 
     assert result["status"] == "ok"
     assert result["human_questions"] == []
-    assert "human_clarification->tool_router" in result["route_history"]
+    assert "human_clarification->product_size_clarification" in result["route_history"]
+    assert "product_size_clarification->tool_router" in result["route_history"]
     assert "tool_router->product" in result["route_history"]
     assert result["artifacts"]["products"]["matches"][0]["name"] == "Canvas Day Backpack"
+
+
+def test_shirt_answer_requests_size_before_product_search() -> None:
+    result = run_agent(
+        "Give me product under 40 dollar.",
+        context={
+            "human_answers": {
+                "product_type": "shirt",
+                "color": "black",
+                "strict_budget": "yes",
+            }
+        },
+        max_revisions=1,
+    )
+
+    assert result["status"] == "needs_input"
+    assert result["human_questions"] == [
+        {
+            "id": "size",
+            "question": "What shirt size do you want?",
+            "type": "choice",
+            "options": ["S", "M", "L", "XL"],
+            "required": True,
+        }
+    ]
+    assert "product_size_clarification->finalize" in result["route_history"]
+    assert "tool_router->product" not in result["route_history"]
+
+
+def test_shirt_search_uses_human_size_answer() -> None:
+    result = run_agent(
+        "Give me product under 40 dollar.",
+        context={
+            "human_answers": {
+                "product_type": "shirt",
+                "color": "black",
+                "size": "M",
+                "strict_budget": "yes",
+            }
+        },
+        max_revisions=1,
+    )
+
+    products = result["artifacts"]["products"]
+
+    assert result["status"] == "ok"
+    assert products["applied_filters"]["size"] == "M"
+    assert products["matches"][0]["name"] == "Black Oxford Shirt"
+    assert "M" in products["matches"][0]["size_options"]
+
+
+def test_shoe_answer_requests_size_before_product_search() -> None:
+    result = run_agent(
+        "Find product under 40 dollar.",
+        context={
+            "human_answers": {
+                "product_type": "shoe",
+                "color": "blue",
+                "strict_budget": "yes",
+            }
+        },
+        max_revisions=1,
+    )
+
+    question = result["human_questions"][0]
+
+    assert result["status"] == "needs_input"
+    assert question["id"] == "size"
+    assert question["question"] == "What shoe size do you want?"
+    assert question["options"] == ["7", "8", "9", "10", "11"]
+
+
+def test_shoe_search_uses_human_size_answer() -> None:
+    result = run_agent(
+        "Find product under 40 dollar.",
+        context={
+            "human_answers": {
+                "product_type": "shoe",
+                "color": "blue",
+                "size": "9",
+                "strict_budget": "yes",
+            }
+        },
+        max_revisions=1,
+    )
+
+    products = result["artifacts"]["products"]
+
+    assert result["status"] == "ok"
+    assert products["applied_filters"]["budget"] == 40.0
+    assert products["applied_filters"]["size"] == "9"
+    assert products["matches"][0]["name"] == "Blue Running Shoe"
 
 
 def test_product_search_changes_results_from_human_answers() -> None:
@@ -150,9 +258,13 @@ def test_graph_metadata_is_documented() -> None:
     assert "intake" in node_ids
     assert "critic" in node_ids
     assert "human_clarification" in node_ids
+    assert "product_size_clarification" in node_ids
     assert "product_tool" in node_ids
     assert ("tool_router", "research_tool") in edge_pairs
     assert ("human_clarification", "finalize") in edge_pairs
+    assert ("human_clarification", "product_size_clarification") in edge_pairs
+    assert ("product_size_clarification", "finalize") in edge_pairs
+    assert ("product_size_clarification", "tool_router") in edge_pairs
     assert ("tool_router", "product_tool") in edge_pairs
     assert "flowchart TD" in GRAPH_MERMAID
 
