@@ -7,7 +7,11 @@ pytest.importorskip("fastapi")
 
 from app.agents.graph import GRAPH_EDGES, GRAPH_MERMAID, GRAPH_NODES, run_agent
 from app.agents.nodes import checkout_tool_node
-from app.agents.product_model import ModelConfigurationError, ProductRequestAnalysis
+from app.agents.product_model import (
+    ModelConfigurationError,
+    ProductRequestAnalysis,
+    get_product_model,
+)
 from app.main import app
 from fastapi.testclient import TestClient
 
@@ -487,6 +491,10 @@ def test_root_serves_browser_test_ui() -> None:
     assert "POST /agent/run" in response.text
     assert "Add to cart" in response.text
     assert "Checkout" in response.text
+    assert "Commerce test flow" in response.text
+    assert "DEMO ORDER ONLY" in response.text
+    assert "productList" in response.text
+    assert "cartCheckoutButton" in response.text
 
 
 def test_agent_run_api_creates_agent_execution() -> None:
@@ -529,15 +537,28 @@ def test_agent_run_api_can_return_human_questions() -> None:
 
 def test_missing_model_configuration_returns_agent_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def fail_to_configure_model() -> None:
-        raise ModelConfigurationError("OPENAI_API_KEY is required for this test.")
+        raise ModelConfigurationError("GEMINI_API_KEY is required for this test.")
 
     monkeypatch.setattr("app.agents.nodes.get_product_model", fail_to_configure_model)
 
     result = run_agent("Find a product under 50 dollars.", max_revisions=1)
 
     assert result["status"] == "error"
-    assert "OPENAI_API_KEY" in result["final_answer"]
+    assert "GEMINI_API_KEY" in result["final_answer"]
     assert "model_analyzer->finalize" in result["route_history"]
+
+
+def test_gemini_is_default_provider_and_requires_its_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MODEL_PROVIDER", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    get_product_model.cache_clear()
+
+    with pytest.raises(ModelConfigurationError, match="GEMINI_API_KEY"):
+        get_product_model()
+
+    get_product_model.cache_clear()
 
 
 def _shipping_answers() -> dict[str, str]:

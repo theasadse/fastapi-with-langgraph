@@ -17,9 +17,9 @@ model-backed. The production application does not contain a product catalog.
 | `app/ui.py` | Renders the test UI and resubmits accumulated human answers. |
 | `app/agents/graph.py` | Registers nodes, connects edges, compiles the graph, and exports graph metadata. |
 | `app/agents/nodes.py` | Implements intake, safety, model analysis, clarification, tools, synthesis, critique, repair, and finalization. |
-| `app/agents/product_model.py` | Defines typed model schemas, the model protocol, OpenAI Responses API calls, web search, and model errors. |
+| `app/agents/product_model.py` | Defines typed schemas, the provider protocol, Gemini/OpenAI implementations, grounded search, and errors. |
 | `app/agents/commerce.py` | Defines the order gateway protocol and non-charging demo implementation. |
-| `app/agents/llm.py` | Optionally uses OpenAI for non-product answer synthesis. |
+| `app/agents/llm.py` | Optionally uses the configured provider for non-product synthesis. |
 | `app/agents/tools.py` | Provides local knowledge, safe arithmetic, and workspace inspection. |
 | `app/agents/state.py` | Defines the shared `AgentState` keys. |
 | `app/agents/schemas.py` | Defines FastAPI request and response bodies. |
@@ -35,11 +35,13 @@ analyze_request(query, collected_context) -> ProductRequestAnalysis
 recommend_products(query, analysis) -> ProductSearchResult
 ```
 
-The OpenAI implementation uses:
+The default Gemini implementation uses:
 
-- `responses.parse(...)` for typed request analysis.
-- `responses.create(...)` with `{"type": "web_search"}` for product research.
-- `responses.parse(...)` again to produce a validated product result.
+- `models.generate_content(...)` with a JSON schema for typed analysis.
+- Gemini Google Search grounding for current product research.
+- A second JSON-schema call for validated product results.
+
+Set `MODEL_PROVIDER=openai` to use the optional OpenAI implementation.
 
 This boundary keeps LangGraph independent from the provider implementation and
 allows tests to inject a fake model without changing graph code.
@@ -96,9 +98,9 @@ same LangGraph execution can resume instead of replaying accumulated context.
 
 ## Error Behavior
 
-There is no catalog fallback. Missing `OPENAI_API_KEY`, a missing OpenAI package,
-or a failed model call produces `status: error`, a user-facing message, trace
-details, and a conditional edge to `finalize`.
+There is no catalog fallback. A missing provider key or SDK, or a failed model
+call, produces `status: error`, a user-facing message, trace details, and a
+conditional edge to `finalize`.
 
 ## API
 

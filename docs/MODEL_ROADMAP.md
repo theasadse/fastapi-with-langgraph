@@ -39,7 +39,7 @@ Status: implemented with stateless resubmission.
 
 ### Phase 3: Current Product Research
 
-- Use OpenAI web search for current candidates.
+- Use Gemini Google Search grounding for current candidates.
 - Prefer retailer or official product pages.
 - Structure results with sources and caveats.
 - Avoid invented price, stock, color, and size claims.

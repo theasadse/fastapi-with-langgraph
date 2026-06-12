@@ -166,7 +166,8 @@ API and tokenized payment integration behind `OrderGateway`.
 
 ## Model Error
 
-Without `OPENAI_API_KEY`, the API returns a normal `AgentResponse` with:
+Without `GEMINI_API_KEY` when Gemini is selected, the API returns a normal
+`AgentResponse` with:
 
 ```json
 {

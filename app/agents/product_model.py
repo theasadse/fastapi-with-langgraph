@@ -113,6 +113,112 @@ class ProductModel(Protocol):
         """Return model-generated product recommendations."""
 
 
+class GeminiProductModel:
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str,
+        enable_google_search: bool,
+    ) -> None:
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as exc:
+            raise ModelConfigurationError(
+                'The Google Gen AI SDK is not installed. Run: pip install -e ".[gemini,test]"'
+            ) from exc
+
+        self.model_name = model_name
+        self.enable_google_search = enable_google_search
+        self._client = genai.Client(api_key=api_key)
+        self._types = types
+
+    def analyze_request(
+        self,
+        query: str,
+        collected_context: dict[str, Any],
+    ) -> ProductRequestAnalysis:
+        prompt = (
+            f"{_ANALYSIS_SYSTEM_PROMPT}\n\n"
+            f"Original request:\n{query}\n\n"
+            "Collected conversation context, including human answers, "
+            "previous products, and cart:\n"
+            f"{json.dumps(collected_context, indent=2, sort_keys=True)}"
+        )
+        try:
+            response = self._client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=_gemini_structured_config(ProductRequestAnalysis),
+            )
+            return ProductRequestAnalysis.model_validate_json(response.text)
+        except Exception as exc:
+            raise ModelExecutionError(f"Gemini request analysis failed: {exc}") from exc
+
+    def recommend_products(
+        self,
+        query: str,
+        analysis: ProductRequestAnalysis,
+    ) -> ProductSearchResult:
+        research_text = self._research_products(query, analysis)
+        prompt = (
+            f"{_PRODUCT_RESULT_SYSTEM_PROMPT}\n\n"
+            f"Original request:\n{query}\n\n"
+            "Validated request analysis:\n"
+            f"{analysis.model_dump_json(indent=2)}\n\n"
+            "Grounded research to convert into the response schema:\n"
+            f"{research_text}"
+        )
+        try:
+            response = self._client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=_gemini_structured_config(ProductSearchResult),
+            )
+            result = ProductSearchResult.model_validate_json(response.text)
+        except Exception as exc:
+            raise ModelExecutionError(f"Gemini product structuring failed: {exc}") from exc
+
+        result.model = self.model_name
+        result.search_used = self.enable_google_search
+        return result
+
+    def _research_products(
+        self,
+        query: str,
+        analysis: ProductRequestAnalysis,
+    ) -> str:
+        config = None
+        if self.enable_google_search:
+            grounding_tool = self._types.Tool(
+                google_search=self._types.GoogleSearch()
+            )
+            config = self._types.GenerateContentConfig(tools=[grounding_tool])
+
+        prompt = (
+            f"{_PRODUCT_RESEARCH_SYSTEM_PROMPT}\n\n"
+            f"Original request:\n{query}\n\n"
+            f"Resolved preferences:\n{analysis.model_dump_json(indent=2)}"
+        )
+        try:
+            response = self._client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config,
+            )
+        except Exception as exc:
+            raise ModelExecutionError(f"Gemini product research failed: {exc}") from exc
+
+        text = str(response.text or "").strip()
+        if not text:
+            raise ModelExecutionError("Gemini returned no product research.")
+
+        sources = _gemini_grounding_sources(response)
+        if sources:
+            text += "\n\nGrounding sources:\n" + json.dumps(sources, indent=2)
+        return text
+
+
 class OpenAIProductModel:
     def __init__(
         self,
@@ -249,20 +355,69 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 @lru_cache(maxsize=1)
 def get_product_model() -> ProductModel:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    model_name = os.getenv("OPENAI_MODEL", "gpt-5.5").strip() or "gpt-5.5"
+    provider = os.getenv("MODEL_PROVIDER", "gemini").strip().lower() or "gemini"
 
-    if not api_key:
-        raise ModelConfigurationError(
-            "OPENAI_API_KEY is required because request analysis and product "
-            "commerce actions are model-backed."
+    if provider == "gemini":
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        model_name = (
+            os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip()
+            or "gemini-3.5-flash"
+        )
+        if not api_key:
+            raise ModelConfigurationError(
+                "GEMINI_API_KEY is required because Gemini is the configured "
+                "model provider."
+            )
+        return GeminiProductModel(
+            api_key=api_key,
+            model_name=model_name,
+            enable_google_search=_env_flag(
+                "GEMINI_ENABLE_GOOGLE_SEARCH",
+                default=True,
+            ),
         )
 
-    return OpenAIProductModel(
-        api_key=api_key,
-        model_name=model_name,
-        enable_web_search=_env_flag("OPENAI_ENABLE_WEB_SEARCH", default=True),
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        model_name = os.getenv("OPENAI_MODEL", "gpt-5.5").strip() or "gpt-5.5"
+        if not api_key:
+            raise ModelConfigurationError(
+                "OPENAI_API_KEY is required because OpenAI is the configured "
+                "model provider."
+            )
+        return OpenAIProductModel(
+            api_key=api_key,
+            model_name=model_name,
+            enable_web_search=_env_flag("OPENAI_ENABLE_WEB_SEARCH", default=True),
+        )
+
+    raise ModelConfigurationError(
+        f"Unsupported MODEL_PROVIDER '{provider}'. Use 'gemini' or 'openai'."
     )
+
+
+def _gemini_structured_config(schema: type[BaseModel]) -> dict[str, Any]:
+    return {
+        "response_mime_type": "application/json",
+        "response_json_schema": schema.model_json_schema(),
+    }
+
+
+def _gemini_grounding_sources(response: Any) -> list[dict[str, str]]:
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return []
+
+    metadata = getattr(candidates[0], "grounding_metadata", None)
+    chunks = getattr(metadata, "grounding_chunks", None) or []
+    sources: list[dict[str, str]] = []
+    for chunk in chunks:
+        web = getattr(chunk, "web", None)
+        uri = str(getattr(web, "uri", "") or "").strip()
+        title = str(getattr(web, "title", "") or "").strip()
+        if uri:
+            sources.append({"title": title or uri, "url": uri})
+    return sources
 
 
 _ANALYSIS_SYSTEM_PROMPT = """

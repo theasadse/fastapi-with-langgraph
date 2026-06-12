@@ -18,12 +18,19 @@ def render_test_ui() -> str:
       --muted: #657184;
       --accent: #0f6b5f;
       --accent-dark: #0a5148;
+      --accent-soft: #e7f4f0;
+      --warning: #8a5a12;
+      --warning-soft: #fff8e8;
       --danger: #a33a32;
       --code: #111827;
     }
 
     * {
       box-sizing: border-box;
+    }
+
+    .hidden {
+      display: none !important;
     }
 
     body {
@@ -225,6 +232,128 @@ def render_test_ui() -> str:
       letter-spacing: 0;
     }
 
+    .commerce-flow {
+      margin-bottom: 16px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .commerce-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+    }
+
+    .commerce-head h3,
+    .commerce-block h4 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    .demo-badge {
+      color: var(--warning);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .flow-step {
+      min-width: 0;
+      padding: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .flow-step + .flow-step {
+      border-left: 1px solid var(--line);
+    }
+
+    .flow-step.active {
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+    }
+
+    .commerce-block {
+      padding: 14px 0;
+    }
+
+    .commerce-block + .commerce-block {
+      border-top: 1px solid var(--line);
+    }
+
+    .commerce-block.hidden {
+      display: none;
+    }
+
+    .commerce-empty {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .product-list,
+    .cart-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .product-item,
+    .cart-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 11px;
+      background: #fbfcfd;
+    }
+
+    .item-name {
+      display: block;
+      font-weight: 700;
+    }
+
+    .item-meta {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .cart-summary,
+    .order-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+
+    .order-summary {
+      align-items: flex-start;
+      color: var(--accent-dark);
+    }
+
+    .order-summary.cancelled {
+      color: var(--warning);
+    }
+
     .human-question {
       margin-bottom: 12px;
     }
@@ -284,8 +413,21 @@ def render_test_ui() -> str:
       }
 
       .status-line,
-      .field-row {
+      .field-row,
+      .flow-steps {
         grid-template-columns: 1fr;
+      }
+
+      .flow-step + .flow-step {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .product-item,
+      .cart-item,
+      .cart-summary {
+        grid-template-columns: 1fr;
+        align-items: stretch;
       }
     }
   </style>
@@ -369,6 +511,35 @@ def render_test_ui() -> str:
               <button class="primary" type="button" id="continueButton">Continue with answers</button>
             </div>
           </div>
+          <div class="commerce-flow" id="commerceFlow">
+            <div class="commerce-head">
+              <h3>Commerce test flow</h3>
+              <span class="demo-badge">DEMO ORDER ONLY</span>
+            </div>
+            <div class="flow-steps" aria-label="Commerce flow progress">
+              <div class="flow-step active" id="searchStep">1. Find product</div>
+              <div class="flow-step" id="cartStep">2. Add to cart</div>
+              <div class="flow-step" id="checkoutStep">3. Checkout</div>
+            </div>
+            <div class="commerce-block" id="productsPanel">
+              <h4>Products</h4>
+              <p class="commerce-empty" id="productsEmpty">Run a product search to see model results here.</p>
+              <div class="product-list" id="productList"></div>
+            </div>
+            <div class="commerce-block" id="cartPanel">
+              <h4>Cart</h4>
+              <p class="commerce-empty" id="cartEmpty">Your test cart is empty.</p>
+              <div class="cart-list" id="cartList"></div>
+              <div class="cart-summary hidden" id="cartSummary">
+                <strong id="cartTotal">0 items</strong>
+                <button class="primary" type="button" id="cartCheckoutButton">Checkout cart</button>
+              </div>
+            </div>
+            <div class="commerce-block hidden" id="orderPanel">
+              <h4>Latest order</h4>
+              <div class="order-summary" id="orderSummary"></div>
+            </div>
+          </div>
           <pre id="output">Submit a request to create a new agent run.</pre>
         </div>
       </section>
@@ -390,6 +561,18 @@ def render_test_ui() -> str:
     const humanPanel = document.querySelector("#humanPanel");
     const questionList = document.querySelector("#questionList");
     const continueButton = document.querySelector("#continueButton");
+    const productList = document.querySelector("#productList");
+    const productsEmpty = document.querySelector("#productsEmpty");
+    const cartList = document.querySelector("#cartList");
+    const cartEmpty = document.querySelector("#cartEmpty");
+    const cartSummary = document.querySelector("#cartSummary");
+    const cartTotal = document.querySelector("#cartTotal");
+    const cartCheckoutButton = document.querySelector("#cartCheckoutButton");
+    const orderPanel = document.querySelector("#orderPanel");
+    const orderSummary = document.querySelector("#orderSummary");
+    const searchStep = document.querySelector("#searchStep");
+    const cartStep = document.querySelector("#cartStep");
+    const checkoutStep = document.querySelector("#checkoutStep");
 
     let latestQuestions = [];
 
@@ -401,6 +584,7 @@ def render_test_ui() -> str:
       routeCount.textContent = Array.isArray(data.route_history) ? data.route_history.length : "0";
       traceCount.textContent = Array.isArray(data.trace) ? data.trace.length : "0";
       persistCommerceArtifacts(data);
+      renderCommerceFlow(data);
       renderHumanQuestions(data);
     }
 
@@ -461,6 +645,164 @@ def render_test_ui() -> str:
       scenario.value = scenarioName;
       writeContextValue(contextValue);
       hideHumanQuestions();
+    }
+
+    function money(value, currency = "USD") {
+      if (typeof value !== "number") {
+        return "Price unverified";
+      }
+      return `${currency} ${value.toFixed(2)}`;
+    }
+
+    function setActiveStep(step) {
+      searchStep.classList.toggle("active", step === "search");
+      cartStep.classList.toggle("active", step === "cart");
+      checkoutStep.classList.toggle("active", step === "checkout");
+    }
+
+    function renderCommerceFlow(data = {}) {
+      const contextValue = readContextValue();
+      const artifacts = data.artifacts || {};
+      const products = artifacts.products || contextValue.previous_products || {};
+      const cart = artifacts.cart || contextValue.cart || {};
+      const order = artifacts.order || contextValue.last_order || null;
+
+      renderProducts(products);
+      renderCart(cart);
+      renderOrder(order);
+
+      if (order) {
+        setActiveStep("checkout");
+      } else if (Array.isArray(cart.items) && cart.items.length > 0) {
+        setActiveStep("cart");
+      } else {
+        setActiveStep("search");
+      }
+    }
+
+    function renderProducts(products) {
+      const items = [
+        ...(Array.isArray(products.matches) ? products.matches : []),
+        ...(Array.isArray(products.alternatives) ? products.alternatives : [])
+      ];
+      productList.replaceChildren();
+      productsEmpty.classList.toggle("hidden", items.length > 0);
+
+      for (const product of items) {
+        const row = document.createElement("div");
+        row.className = "product-item";
+
+        const details = document.createElement("div");
+        const name = document.createElement("span");
+        name.className = "item-name";
+        name.textContent = product.name || "Unnamed product";
+
+        const meta = document.createElement("span");
+        meta.className = "item-meta";
+        const parts = [
+          money(product.price, product.currency || "USD"),
+          product.color,
+          product.category
+        ].filter(Boolean);
+        meta.textContent = parts.join(" | ");
+
+        const addButton = document.createElement("button");
+        addButton.type = "button";
+        addButton.textContent = "Add";
+        addButton.addEventListener("click", async () => {
+          await addProductToCart(product);
+        });
+
+        details.appendChild(name);
+        details.appendChild(meta);
+        row.appendChild(details);
+        row.appendChild(addButton);
+        productList.appendChild(row);
+      }
+    }
+
+    function renderCart(cart) {
+      const items = Array.isArray(cart.items) ? cart.items : [];
+      cartList.replaceChildren();
+      cartEmpty.classList.toggle("hidden", items.length > 0);
+      cartSummary.classList.toggle("hidden", items.length === 0);
+
+      for (const item of items) {
+        const row = document.createElement("div");
+        row.className = "cart-item";
+
+        const details = document.createElement("div");
+        const name = document.createElement("span");
+        name.className = "item-name";
+        name.textContent = `${item.quantity || 1} x ${item.name || "Product"}`;
+
+        const meta = document.createElement("span");
+        meta.className = "item-meta";
+        const parts = [
+          item.color,
+          item.size ? `size ${item.size}` : "",
+          money(item.line_total, item.currency || "USD")
+        ].filter(Boolean);
+        meta.textContent = parts.join(" | ");
+
+        details.appendChild(name);
+        details.appendChild(meta);
+        row.appendChild(details);
+        cartList.appendChild(row);
+      }
+
+      if (items.length > 0) {
+        const subtotal = money(cart.subtotal, cart.currency || "USD");
+        cartTotal.textContent = `${cart.item_count || items.length} item(s) | ${subtotal}`;
+      }
+    }
+
+    function renderOrder(order) {
+      orderSummary.replaceChildren();
+      orderPanel.classList.toggle("hidden", !order);
+      if (!order) {
+        return;
+      }
+
+      orderSummary.classList.toggle("cancelled", order.status === "cancelled");
+      const details = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = order.status === "cancelled"
+        ? "Order cancelled"
+        : `Demo order ${order.order_id || ""}`;
+      const message = document.createElement("span");
+      message.className = "item-meta";
+      message.textContent = order.message || "No real payment was submitted.";
+      details.appendChild(title);
+      details.appendChild(message);
+      orderSummary.appendChild(details);
+    }
+
+    async function addProductToCart(product) {
+      const contextValue = readContextValue();
+      contextValue.human_answers = {
+        product_name: product.name,
+        product_type: product.category,
+        product_url: product.source_url,
+        unit_price: product.price,
+        color: product.color,
+        quantity: 1
+      };
+      query.value = `Add ${product.name} to my cart.`;
+      scenario.value = "add-selected-product";
+      writeContextValue(contextValue);
+      hideHumanQuestions();
+      await runAgent();
+    }
+
+    async function checkoutCart() {
+      const contextValue = readContextValue();
+      delete contextValue.human_answers;
+      query.value = "Checkout my cart and place the order.";
+      scenario.value = "checkout";
+      writeContextValue(contextValue);
+      hideHumanQuestions();
+      await runAgent();
     }
 
     function createQuestionControl(question) {
@@ -603,12 +945,24 @@ def render_test_ui() -> str:
     });
 
     document.querySelector("#cartSampleButton").addEventListener("click", () => {
+      const contextValue = readContextValue();
+      const products = contextValue.previous_products || {};
+      const firstProduct = [
+        ...(products.matches || []),
+        ...(products.alternatives || [])
+      ][0];
+      if (firstProduct) {
+        addProductToCart(firstProduct);
+        return;
+      }
       startScenario("Add Blue Running Shoe to my cart.", "add-to-cart");
     });
 
     document.querySelector("#checkoutSampleButton").addEventListener("click", () => {
-      startScenario("Checkout my cart and place the order.", "checkout");
+      checkoutCart();
     });
+
+    cartCheckoutButton.addEventListener("click", checkoutCart);
 
     continueButton.addEventListener("click", async () => {
       await runAgent(collectHumanAnswers());
@@ -622,7 +976,10 @@ def render_test_ui() -> str:
       output.classList.remove("error");
       output.textContent = "Submit a request to create a new agent run.";
       hideHumanQuestions();
+      renderCommerceFlow();
     });
+
+    renderCommerceFlow();
   </script>
 </body>
 </html>

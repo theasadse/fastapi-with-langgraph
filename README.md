@@ -1,7 +1,7 @@
 # FastAPI With LangGraph
 
 A model-backed LangGraph example with FastAPI, a browser test UI, structured
-OpenAI outputs, optional live product web search, human clarification, tool
+Gemini outputs, optional Google Search grounding, human clarification, tool
 routing, cart actions, confirmed checkout, critique, repair, and traceable graph
 state.
 
@@ -19,9 +19,9 @@ recommendations.
 |   `-- agents/
 |       |-- graph.py               # LangGraph nodes, edges, and compiled graph
 |       |-- nodes.py               # Node behavior and routing functions
-|       |-- product_model.py       # OpenAI structured analysis and product search
+|       |-- product_model.py       # Gemini/OpenAI analysis and product search
 |       |-- commerce.py            # Order gateway protocol and safe demo gateway
-|       |-- llm.py                 # Optional non-product OpenAI synthesis
+|       |-- llm.py                 # Optional non-product model synthesis
 |       |-- tools.py               # Research, calculator, and workspace tools
 |       |-- state.py               # Shared graph state
 |       `-- schemas.py             # FastAPI request and response models
@@ -43,22 +43,32 @@ recommendations.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[openai,test]"
+pip install -e ".[gemini,test]"
 cp .env.example .env
 ```
 
 Set your key in `.env`:
 
 ```dotenv
-OPENAI_API_KEY=your-key
-OPENAI_MODEL=gpt-5.5
-OPENAI_ENABLE_WEB_SEARCH=true
-AGENT_USE_OPENAI=true
+MODEL_PROVIDER=gemini
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-3.5-flash
+GEMINI_ENABLE_GOOGLE_SEARCH=true
+AGENT_USE_MODEL=true
 ```
 
-`OPENAI_API_KEY` is required for request analysis and product recommendations.
-`OPENAI_ENABLE_WEB_SEARCH=true` lets the model research current retailer and
-product pages. `AGENT_USE_OPENAI` only controls optional non-product synthesis.
+Create a key in [Google AI Studio](https://aistudio.google.com/apikey).
+`GEMINI_API_KEY` is required for request analysis and product recommendations.
+Google may provide free-tier quota, but current limits depend on its pricing and
+your account.
+
+OpenAI remains an optional provider:
+
+```dotenv
+MODEL_PROVIDER=openai
+OPENAI_API_KEY=your-key
+OPENAI_MODEL=gpt-5.5
+```
 
 ## Run
 
@@ -145,10 +155,10 @@ Product completion can involve these model calls:
 
 1. Structured request analysis.
 2. Another structured analysis after each human response.
-3. Product research, optionally using OpenAI web search.
+3. Product research, optionally using Google Search grounding.
 4. Structured conversion of research into the product response schema.
 
-Tests do not call OpenAI. They inject a fake implementation of the same typed
+Tests do not call Gemini or OpenAI. They inject a fake implementation of the typed
 model protocol.
 
 ## Documentation
@@ -157,11 +167,11 @@ model protocol.
 - [API testing and human interaction](docs/API_TESTING.md)
 - [Model implementation roadmap](docs/MODEL_ROADMAP.md)
 - [Nodes and edges](docs/NODES_AND_EDGES.md)
-- [All covered topics](docs/TOPICS.md)
+- [Complete project guide and all covered topics](docs/TOPICS.md)
 
 ## References
 
 - [LangGraph graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)
-- [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
-- [OpenAI Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses)
-- [OpenAI web search tool](https://developers.openai.com/api/docs/guides/tools-web-search)
+- [Gemini structured outputs](https://ai.google.dev/gemini-api/docs/structured-output)
+- [Gemini Google Search grounding](https://ai.google.dev/gemini-api/docs/google-search)
+- [Google Gen AI Python SDK](https://googleapis.github.io/python-genai/)

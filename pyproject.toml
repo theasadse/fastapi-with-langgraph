@@ -16,7 +16,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gemini = [
+    "google-genai>=1.0.0",
+]
 openai = [
+    "openai>=2.0.0",
+]
+ai = [
+    "google-genai>=1.0.0",
     "openai>=2.0.0",
 ]
 test = [
