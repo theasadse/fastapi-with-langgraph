@@ -1,103 +1,48 @@
 # API Testing
 
-This project gives you three practical ways to test the agent API:
+## Start The Service
 
-- Browser test UI at `http://127.0.0.1:8000/`
-- Swagger UI at `http://127.0.0.1:8000/docs`
-- Command-line calls with `curl`
+```bash
+source .venv/bin/activate
+uvicorn app.main:app --reload
+```
 
-## CRUD-Style Mental Model
+Open:
 
-In CRUD applications, the first operation is usually create. For this agent API,
-the create operation is:
+- UI: `http://127.0.0.1:8000/`
+- Swagger: `http://127.0.0.1:8000/docs`
+
+## CRUD Analogy
+
+The example begins with the create operation:
 
 ```text
 POST /agent/run
 ```
 
-This creates a new agent execution. The project does not persist agent runs in a
-database, so the run exists only for the lifetime of that HTTP request.
+Each POST creates a new graph execution. It is not yet a stored AgentRun
+resource, so read, update, delete, and resume-by-ID endpoints are not included.
+A production CRUD expansion could add:
 
-| CRUD Idea | Current Endpoint | Meaning |
-| --- | --- | --- |
-| Create | `POST /agent/run` | Create one new agent run from a user query. |
-| Read | `GET /health` | Read service status. |
-| Read | `GET /agent/graph` | Read graph metadata, nodes, edges, and Mermaid diagram. |
-| Read | `GET /docs` | Read and test the OpenAPI contract. |
-| Update | Not implemented | A completed stateless run is not updated. |
-| Delete | Not implemented | No stored run exists to delete. |
+| Operation | Suggested endpoint |
+|---|---|
+| Create run | `POST /agent/runs` |
+| Read run | `GET /agent/runs/{run_id}` |
+| Continue run | `POST /agent/runs/{run_id}/responses` |
+| Cancel/delete run | `DELETE /agent/runs/{run_id}` |
 
-If you later add a database, the next CRUD endpoints could be:
-
-```text
-POST   /agent/runs
-GET    /agent/runs/{run_id}
-GET    /agent/runs
-PATCH  /agent/runs/{run_id}
-DELETE /agent/runs/{run_id}
-```
-
-## Browser Test UI
-
-Open:
-
-```text
-http://127.0.0.1:8000/
-```
-
-The UI sends a real `fetch()` request to `POST /agent/run` with this JSON shape:
-
-```json
-{
-  "query": "Create a FastAPI and LangGraph project, explain the files, document the nodes and edges, and show how the agent API works.",
-  "context": {
-    "source": "test-ui",
-    "priority": "learning",
-    "scenario": "local-ui-test"
-  },
-  "max_revisions": 2
-}
-```
-
-The response panel shows:
-
-- `answer`: final agent answer.
-- `status`: `ok`, `needs_input`, `refused`, or `error`.
-- `human_questions`: questions the UI should ask the user when status is `needs_input`.
-- `plan`: steps created by the planner node.
-- `artifacts`: outputs from tools such as research, calculator, and code inspection.
-- `critique`: score and repair decision from the critic.
-- `trace`: node-level execution log.
-- `route_history`: conditional edges selected during the run.
-
-## Swagger Testing
-
-Open:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-Use `POST /agent/run`, select `Try it out`, paste a request body, and execute it.
-Swagger uses the same API route as the browser UI.
-
-## Human-In-The-Loop Product Example
-
-Start with an under-specified request:
+## First Product Request
 
 ```bash
-curl -X POST http://127.0.0.1:8000/agent/run \
+curl -sS -X POST http://127.0.0.1:8000/agent/run \
   -H "Content-Type: application/json" \
   -d '{
     "query": "Find a product under 50 dollars.",
-    "context": {
-      "source": "curl"
-    },
     "max_revisions": 1
   }'
 ```
 
-The agent returns `status: "needs_input"` and structured questions:
+An incomplete request returns HTTP 200 with an application status:
 
 ```json
 {
@@ -106,36 +51,28 @@ The agent returns `status: "needs_input"` and structured questions:
     {
       "id": "product_type",
       "question": "Which product name or type should I search for?",
-      "type": "text"
-    },
-    {
-      "id": "color",
-      "question": "Which color do you want?",
-      "type": "choice",
-      "options": ["black", "white", "blue", "green", "any"]
-    },
-    {
-      "id": "strict_budget",
-      "question": "Should I only show products under the stated budget?",
-      "type": "yes_no",
-      "options": ["yes", "no"]
+      "type": "text",
+      "options": [],
+      "required": true
     }
   ]
 }
 ```
 
-Continue by sending another create-run request with human answers in context:
+Question wording and options come from the model and may differ. Use each
+question's `id` as the key in `context.human_answers`.
+
+## Continue With Answers
 
 ```bash
-curl -X POST http://127.0.0.1:8000/agent/run \
+curl -sS -X POST http://127.0.0.1:8000/agent/run \
   -H "Content-Type: application/json" \
   -d '{
     "query": "Find a product under 50 dollars.",
     "context": {
-      "source": "curl",
       "human_answers": {
-        "product_type": "backpack",
-        "color": "black",
+        "product_type": "running shoe",
+        "color": "blue",
         "strict_budget": "yes"
       }
     },
@@ -143,138 +80,137 @@ curl -X POST http://127.0.0.1:8000/agent/run \
   }'
 ```
 
-That second request continues past the human clarification step and runs the
-product size clarification step. If the product is `shirt` or `shoe` and size is
-missing, the agent returns another `needs_input` response before it runs the
-product tool.
-
-For example, this request has product name/type but no size:
-
-```bash
-curl -X POST http://127.0.0.1:8000/agent/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Give me product under 40 dollar.",
-    "context": {
-      "human_answers": {
-        "product_type": "shirt",
-        "color": "black",
-        "strict_budget": "yes"
-      }
-    },
-    "max_revisions": 1
-  }'
-```
-
-The agent asks:
+If the model decides size is required, the response remains `needs_input`.
+Resubmit all previous answers plus size:
 
 ```json
 {
-  "status": "needs_input",
-  "human_questions": [
-    {
-      "id": "size",
-      "question": "What shirt size do you want?",
-      "type": "choice",
-      "options": ["S", "M", "L", "XL"]
-    }
-  ]
-}
-```
-
-Add the size to continue:
-
-```json
-{
-  "context": {
-    "human_answers": {
-      "product_type": "shirt",
-      "color": "black",
-      "size": "M",
-      "strict_budget": "yes"
-    }
+  "human_answers": {
+    "product_type": "running shoe",
+    "color": "blue",
+    "strict_budget": "yes",
+    "size": "9"
   }
 }
 ```
 
-The final response includes product matches in `artifacts.products`.
+The completed response stores structured results under:
 
-Different human answers change the product results:
+```text
+artifacts.products.applied_filters
+artifacts.products.matches
+artifacts.products.alternatives
+artifacts.products.caveats
+artifacts.products.model
+artifacts.products.search_used
+```
 
-| Human Answers | Expected Top Product |
-| --- | --- |
-| `product_type=speaker`, `color=blue`, `strict_budget=yes` | `Compact Bluetooth Speaker` |
-| `product_type=backpack`, `color=blue`, `strict_budget=yes` | `City Blue Backpack` |
-| `product_type=backpack`, `color=black`, `strict_budget=yes` | `Canvas Day Backpack` |
-| `product_type=backpack`, `color=black`, `strict_budget=no` | `Weatherproof Travel Backpack` |
-| `product_type=shirt`, `color=black`, `size=M`, `strict_budget=yes` | `Black Oxford Shirt` |
-| `product_type=shoe`, `color=blue`, `size=9`, `strict_budget=yes` | `Blue Running Shoe` |
+Each recommendation can include `name`, `category`, `price`, `currency`,
+`color`, `size_options`, `reason`, `source_url`, `availability_note`, and
+`over_budget`.
 
-The `strict_budget=no` answer allows flexible budget results. Those products are
-marked with `over_budget: true` in `artifacts.products.matches`.
-
-## Curl Testing
-
-Create a new agent run:
+## Add To Cart
 
 ```bash
-curl -X POST http://127.0.0.1:8000/agent/run \
+curl -sS -X POST http://127.0.0.1:8000/agent/run \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "Create documentation for the FastAPI LangGraph project and explain the nodes and edges.",
+    "query": "Add Blue Running Shoe to my cart.",
     "context": {
-      "source": "curl"
-    },
-    "max_revisions": 2
+      "human_answers": {
+        "size": "9",
+        "color": "blue",
+        "quantity": "1",
+        "unit_price": "39.99"
+      }
+    }
   }'
 ```
 
-Read graph metadata:
+Copy `artifacts.cart` into `context.cart` for the next stateless request. The
+browser UI does this automatically.
 
-```bash
-curl http://127.0.0.1:8000/agent/graph
-```
+## Checkout
 
-Read service health:
+First send `Checkout my cart and place the order` with `context.cart`. The model
+asks for shipping fields. Resubmit the accumulated answers:
 
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-## How The Agent API Works
-
-`POST /agent/run` receives an `AgentRequest` from `app/agents/schemas.py`.
-FastAPI validates the JSON body before the graph starts.
-
-The endpoint calls `run_agent()` in `app/agents/graph.py`. That function creates
-the initial `AgentState`:
-
-```python
+```json
 {
-    "request": query,
-    "context": context or {},
-    "max_revisions": max_revisions,
-    "revision_count": 0,
-    "trace": [],
-    "route_history": [],
-    "pending_tools": [],
-    "completed_tools": [],
-    "artifacts": {},
+  "shipping_name": "Test Customer",
+  "shipping_address": "123 Test Street",
+  "shipping_city": "Karachi",
+  "shipping_region": "Sindh",
+  "shipping_postal_code": "74000",
+  "shipping_country": "Pakistan",
+  "contact_email": "customer@example.com"
 }
 ```
 
-The compiled LangGraph workflow then runs through these main phases:
+The next response asks only:
 
-1. `intake`: normalize the query and detect intent.
-2. `safety_guard`: allow or refuse the request.
-3. `planner`: create a plan and choose tools.
-4. `human_clarification`: ask for missing base product context when needed.
-5. `product_size_clarification`: ask for shirt or shoe size when needed.
-6. `tool_router`: run selected tools until none remain.
-7. `synthesize`: create the draft answer.
-8. `critic`: score the draft and decide whether repair is needed.
-9. `repair`: improve the draft when needed.
-10. `finalize`: return the final API response.
+```json
+{
+  "id": "confirm_order",
+  "type": "yes_no",
+  "options": ["yes", "no"]
+}
+```
 
-The endpoint converts the final graph state into `AgentResponse`, then returns
-JSON to the browser UI, Swagger, or curl.
+Resubmit all answers with `"confirm_order": "yes"`. The demo gateway returns
+`artifacts.order.status=simulated_placed`. Answering `no` returns
+`status=cancelled` and leaves the cart unchanged.
+
+No payment card or bank fields are collected. A real order requires a retailer
+API and tokenized payment integration behind `OrderGateway`.
+
+## Model Error
+
+Without `GEMINI_API_KEY` when Gemini is selected, the API returns a normal
+`AgentResponse` with:
+
+```json
+{
+  "status": "error",
+  "answer": "The model-backed agent could not complete this request..."
+}
+```
+
+This is deliberate. Product requests never fall back to static products.
+
+## Browser UI
+
+1. Select `Load product sample`.
+2. Run the agent.
+3. Complete the generated controls.
+4. Select `Continue with answers`.
+5. Repeat if the model asks a size question.
+6. Use `Add to cart`, complete variant questions, and inspect `artifacts.cart`.
+7. Use `Checkout`, complete shipping fields, and confirm yes or no.
+8. Inspect `trace`, `route_history`, `artifacts.order`, and the cleared cart.
+
+The UI merges new answers with earlier answers before creating the next run.
+
+## Automated Tests
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+Tests inject `FakeProductModel` through `get_product_model`. This checks graph
+behavior and response schemas without a network call. It is test data, not a
+runtime product fallback.
+
+## Useful Assertions
+
+- Generic shopping prompts produce `intent=product_search`.
+- Missing preferences produce `status=needs_input`.
+- Shirt or shoe requests can produce a second size checkpoint.
+- Different human answers reach different fake-model outputs.
+- Model errors route directly to `finalize`.
+- Product results contain source links when web search is reported as used.
+- Unsafe requests finish before model analysis.
+- Cart actions preserve product variants and quantity.
+- Checkout collects shipping before asking for final confirmation.
+- Confirmed checkout creates a simulated order and clears the cart.
+- A `no` answer cancels checkout and keeps the cart.

@@ -1,151 +1,469 @@
-# Covered Topics
+# Complete Project Guide
 
-This project covers the following FastAPI, LangGraph, agent, UI, and testing
-topics.
+This is the single-document overview of every topic covered in the project and
+our implementation discussion.
 
-## Project Setup
+## 1. Project Goal
 
-| Topic | Where To Read |
-| --- | --- |
-| Python virtual environment setup | `README.md` |
-| Installing project dependencies | `README.md` |
-| Optional OpenAI model configuration | `README.md`, `docs/ARCHITECTURE.md` |
-| Running Uvicorn locally | `README.md` |
-| Local-first deterministic agent behavior | `README.md`, `docs/ARCHITECTURE.md` |
+The project demonstrates how to combine:
 
-## FastAPI Topics
+- FastAPI for HTTP endpoints and request validation.
+- LangGraph for a multi-node agent workflow.
+- Gemini structured outputs for intent and missing-information analysis.
+- Optional web search for current product recommendations.
+- Human interaction for incomplete requests.
+- Cart and checkout actions with explicit order confirmation.
+- A browser UI for manually testing the complete flow.
+- Deterministic tests that do not call a paid model.
 
-| Topic | Where To Read |
-| --- | --- |
-| FastAPI application entrypoint | `app/main.py`, `docs/ARCHITECTURE.md` |
-| Health endpoint | `GET /health`, `docs/ARCHITECTURE.md` |
-| Graph metadata endpoint | `GET /agent/graph`, `docs/API_TESTING.md` |
-| Agent run endpoint | `POST /agent/run`, `docs/API_TESTING.md` |
-| Browser test UI endpoint | `GET /`, `docs/API_TESTING.md` |
-| Favicon handling | `GET /favicon.ico`, `app/main.py` |
-| Pydantic request and response schemas | `app/agents/schemas.py`, `docs/ARCHITECTURE.md` |
-| Swagger/OpenAPI testing | `http://127.0.0.1:8000/docs`, `docs/API_TESTING.md` |
+The production product flow does not use a static product catalog.
 
-## LangGraph Topics
+## 2. Original 404 Problem
 
-| Topic | Where To Read |
-| --- | --- |
-| `StateGraph` workflow setup | `app/agents/graph.py`, `docs/NODES_AND_EDGES.md` |
-| `START` and `END` graph boundaries | `app/agents/graph.py`, `docs/NODES_AND_EDGES.md` |
-| Normal edges | `docs/NODES_AND_EDGES.md` |
-| Conditional edges | `docs/NODES_AND_EDGES.md` |
-| Node registration | `app/agents/graph.py` |
-| Graph compilation | `create_agent_graph()` in `app/agents/graph.py` |
-| Graph metadata and Mermaid diagram | `GET /agent/graph`, `docs/NODES_AND_EDGES.md` |
+Uvicorn was running correctly, but `GET /` returned `404 Not Found` because the
+FastAPI application initially had no root route.
 
-## Agent Workflow Topics
+The project now defines:
 
-| Topic | Node Or File |
-| --- | --- |
-| Intake and intent detection | `intake_node` |
-| Safety guard and refusal path | `safety_guard_node` |
-| Planning | `planner_node` |
-| Human clarification | `human_clarification_node` |
-| Product size clarification | `product_size_clarification_node` |
-| Tool routing | `tool_router_node` |
-| Research tool | `research_tool_node` |
-| Calculator tool | `calculator_tool_node` |
-| Code/workspace inspection tool | `code_tool_node` |
-| Product search tool | `product_tool_node` |
-| Answer synthesis | `synthesize_node` |
-| Critique and repair loop | `critic_node`, `repair_node` |
-| Final response handling | `finalize_node` |
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | Browser testing UI. |
+| `GET /favicon.ico` | Empty favicon response that avoids a browser 404. |
+| `GET /health` | Service health check. |
+| `GET /agent/graph` | Node, edge, and Mermaid graph metadata. |
+| `POST /agent/run` | Creates one agent execution. |
+| `GET /docs` | FastAPI Swagger documentation. |
 
-## Human-In-The-Loop Topics
+## 3. API And CRUD Meaning
 
-| Topic | Where To Read |
-| --- | --- |
-| Returning `status: needs_input` | `docs/API_TESTING.md`, `docs/NODES_AND_EDGES.md` |
-| Structured human questions | `human_questions` in `AgentResponse` |
-| Text questions | `product_type` question |
-| Choice questions | `color` question |
-| Yes/no questions | `strict_budget` question |
-| Shirt size questions | `size` question for `product_type=shirt` |
-| Shoe size questions | `size` question for `product_type=shoe` |
-| Continuing with answers | `context.human_answers` in `docs/API_TESTING.md` |
-| UI follow-up form | `app/ui.py` |
+The current API starts with the create operation:
 
-## Product Search Topics
+```text
+POST /agent/run
+```
 
-| Topic | Where To Read |
-| --- | --- |
-| Sample product catalog | `PRODUCT_CATALOG` in `app/agents/tools.py` |
-| Product type filtering | `search_products()` |
-| Color filtering | `search_products()` |
-| Shirt and shoe size filtering | `size` in `context.human_answers` |
-| Strict budget filtering | `strict_budget=yes` |
-| Flexible budget filtering | `strict_budget=no` |
-| Different products from different answers | `docs/API_TESTING.md` |
-| Over-budget product marking | `over_budget` in `artifacts.products.matches` |
-| Relaxed alternatives | `alternatives` in `artifacts.products` |
+Every call creates a new graph execution. The API is currently stateless, so a
+human continuation sends the original query again with accumulated context.
 
-## API Testing Topics
+A persistent CRUD version could later add:
 
-| Topic | Where To Read |
-| --- | --- |
-| CRUD-style API mapping | `docs/API_TESTING.md` |
-| Create operation for agent runs | `POST /agent/run` |
-| Read operation for health | `GET /health` |
-| Read operation for graph metadata | `GET /agent/graph` |
-| Swagger testing | `docs/API_TESTING.md` |
-| Curl testing | `docs/API_TESTING.md` |
-| Browser UI testing | `app/ui.py`, `docs/API_TESTING.md` |
+| Operation | Example endpoint |
+|---|---|
+| Create run | `POST /agent/runs` |
+| Read run | `GET /agent/runs/{run_id}` |
+| Continue run | `POST /agent/runs/{run_id}/responses` |
+| Cancel run | `DELETE /agent/runs/{run_id}` |
 
-## UI Topics
+LangGraph checkpointing and a `thread_id` would allow the same execution to
+resume rather than rebuilding state from the client context.
 
-| Topic | Where To Read |
-| --- | --- |
-| Small test UI served by FastAPI | `app/ui.py` |
-| Running the agent from the browser | `Run agent` button |
-| Loading calculator sample | `Load calculator sample` button |
-| Loading product sample | `Load product sample` button |
-| Rendering human questions | `renderHumanQuestions()` in `app/ui.py` |
-| Continuing with human answers | `Continue with answers` button |
-| Viewing trace and route counts | API response panel |
+## 4. Intent Design: Dynamic Or Static?
 
-## State And Response Topics
+The intent system is intentionally hybrid.
 
-| Topic | Where To Read |
-| --- | --- |
-| Shared graph state | `AgentState` in `app/agents/state.py` |
-| Request schema | `AgentRequest` in `app/agents/schemas.py` |
-| Response schema | `AgentResponse` in `app/agents/schemas.py` |
-| Graph description schema | `GraphDescription` in `app/agents/schemas.py` |
-| Trace logging | `trace` state key |
-| Route history logging | `route_history` state key |
-| Tool artifacts | `artifacts` state key |
-| Human questions | `human_questions` state key |
+### Static Intent Contract
 
-## Testing Topics
+The application defines seven supported intents:
 
-| Topic | Where To Read |
-| --- | --- |
-| Graph route tests | `tests/test_agent_graph.py` |
-| Calculator route test | `test_agent_can_route_to_calculator_tool` |
-| Human input required test | `test_product_search_requests_human_input_when_context_is_missing` |
-| Generic product prompt test | `test_generic_product_prompts_share_product_search_flow` |
-| Human answer continuation test | `test_product_search_continues_after_human_answers` |
-| Shirt size follow-up test | `test_shirt_answer_requests_size_before_product_search` |
-| Shirt size result test | `test_shirt_search_uses_human_size_answer` |
-| Shoe size follow-up test | `test_shoe_answer_requests_size_before_product_search` |
-| Shoe size result test | `test_shoe_search_uses_human_size_answer` |
-| Different product result tests | `test_product_search_changes_results_from_human_answers` |
-| Flexible budget test | `test_product_search_budget_answer_changes_results` |
-| Refusal test | `test_agent_refuses_blocked_request` |
-| API route tests | `test_agent_run_api_creates_agent_execution` |
-| UI route test | `test_root_serves_browser_test_ui` |
+1. `product_search`
+2. `add_to_cart`
+3. `checkout`
+4. `calculation`
+5. `software_delivery`
+6. `documentation`
+7. `general_assistance`
 
-## Documentation Topics
+The list is static because LangGraph needs known actions and edges. The model
+cannot invent an unsupported action and cause arbitrary code to run.
 
-| Document | Covers |
-| --- | --- |
-| `README.md` | Setup, run commands, endpoint overview, human interaction example, docs links. |
-| `docs/ARCHITECTURE.md` | File roles, runtime flow, state, endpoints, model behavior, agent complexity. |
-| `docs/API_TESTING.md` | CRUD mapping, browser UI testing, Swagger, curl, human-in-loop API flow. |
-| `docs/NODES_AND_EDGES.md` | Graph diagram, nodes, edges, tool loop, human interaction loop, critique loop. |
-| `docs/TOPICS.md` | Complete topic index for the project. |
+### Dynamic Classification
+
+The model dynamically reads the user's natural language and selects one of the
+seven allowed values.
+
+These requests can all map to `product_search` without hardcoded sentences:
+
+```text
+Give me a product under 50 dollars.
+Find an item below $40.
+Show me affordable running shoes.
+```
+
+These requests can map to `add_to_cart`:
+
+```text
+Add the blue shoe to my cart.
+Put two of those in my basket.
+I want the black shirt in size M.
+```
+
+The Pydantic `Literal` provides the static contract, while Gemini JSON-schema
+generation performs dynamic classification.
+
+## 5. Model-Backed Analysis
+
+`model_analyzer` sends the request and collected context to the model. The
+structured `ProductRequestAnalysis` can contain:
+
+- Intent and normalized request.
+- Product type and product name.
+- Product URL and supported price.
+- Budget, currency, and strict-budget preference.
+- Color, size, and quantity.
+- Shipping fields.
+- Final order confirmation.
+- Missing fields.
+- Dynamically generated human questions.
+
+The collected context can include:
+
+```text
+context.human_answers
+context.previous_products
+context.cart
+```
+
+If the configured provider key is missing or a model call fails, the graph
+returns `status=error`. It never silently falls back to static products.
+
+## 6. LangGraph Nodes
+
+| Node | Responsibility |
+|---|---|
+| `intake` | Normalize the incoming text. |
+| `safety_guard` | Block known unsafe request patterns. |
+| `model_analyzer` | Dynamically select intent and identify missing information. |
+| `planner` | Create an intent-specific plan and pending tool list. |
+| `human_clarification` | Ask non-size questions generated by the model. |
+| `product_size_clarification` | Ask a separate clothing or footwear size question. |
+| `tool_router` | Route to the next pending tool. |
+| `research_tool` | Return local FastAPI and LangGraph knowledge. |
+| `calculator_tool` | Safely calculate arithmetic expressions. |
+| `code_tool` | Inspect the local project structure. |
+| `product_tool` | Use the model and optional web search to recommend products. |
+| `cart_tool` | Add or merge a product, variant, and quantity in the cart. |
+| `checkout_tool` | Validate confirmation and call the configured order gateway. |
+| `synthesize` | Format a natural response from structured artifacts. |
+| `critic` | Apply intent-specific quality checks. |
+| `repair` | Improve a weak draft within the revision limit. |
+| `finalize` | Return success, human input, refusal, or error. |
+
+## 7. Nodes And Edges
+
+```mermaid
+flowchart TD
+    START([START]) --> intake
+    intake --> safety_guard
+    safety_guard -- refused --> finalize
+    safety_guard -- allowed --> model_analyzer
+    model_analyzer -- error --> finalize
+    model_analyzer -- success --> planner
+    planner --> human_clarification
+    human_clarification -- missing input --> finalize
+    human_clarification -- complete --> product_size_clarification
+    product_size_clarification -- missing size --> finalize
+    product_size_clarification -- complete --> tool_router
+    tool_router -- product --> product_tool
+    tool_router -- cart --> cart_tool
+    tool_router -- checkout --> checkout_tool
+    tool_router -- research --> research_tool
+    tool_router -- calculator --> calculator_tool
+    tool_router -- code --> code_tool
+    product_tool --> tool_router
+    cart_tool --> tool_router
+    checkout_tool --> tool_router
+    research_tool --> tool_router
+    calculator_tool --> tool_router
+    code_tool --> tool_router
+    tool_router -- no tools --> synthesize
+    synthesize --> critic
+    critic -- revise --> repair
+    repair --> critic
+    critic -- pass --> finalize
+    finalize --> END([END])
+```
+
+Conditional edge functions read graph state and return route labels such as
+`plan`, `error`, `ask_human`, `continue`, `repair`, or `finalize`.
+
+## 8. Intent-To-Tool Routing
+
+The model selects intent dynamically, then deterministic code selects tools:
+
+```python
+{
+    "product_search": ["product"],
+    "add_to_cart": ["cart"],
+    "checkout": ["checkout"],
+    "calculation": ["calculator"],
+    "software_delivery": ["research", "code"],
+    "documentation": ["research", "code"],
+    "general_assistance": [],
+}
+```
+
+`general_assistance` has no tools, so it routes directly to synthesis.
+
+## 9. Human Interaction
+
+For:
+
+```text
+Give me a product under 50 dollars.
+```
+
+the model knows the budget but may ask:
+
+- Which product or product type?
+- Which color?
+- Is the budget strict?
+
+After the client resubmits those answers, the model analyzes the enriched
+context again. If the answer is a shirt or shoe, it can ask another question for
+size.
+
+Questions use one of these UI control types:
+
+- `text`
+- `choice`
+- `yes_no`
+
+Question wording and options are model-generated, so the UI renders them
+dynamically instead of assuming fixed questions.
+
+## 10. Product Recommendation
+
+When all required product details are available:
+
+1. `product_tool` asks the model to research suitable products.
+2. Gemini Google Search grounding can provide current product and retailer pages.
+3. Another Gemini JSON-schema call validates the response schema.
+4. Results are stored in `artifacts.products`.
+
+Product results can include:
+
+- Exact matches and alternatives.
+- Name and category.
+- Price and currency when supported.
+- Color and size options.
+- Recommendation reason.
+- Source URL.
+- Availability note.
+- Over-budget status.
+- Price and stock verification caveats.
+
+Price, shipping, stock, size, and color are external facts that users should
+verify on the retailer page.
+
+## 11. Personal Conversation
+
+Messages such as:
+
+```text
+Hi, how are you man?
+```
+
+are classified as `general_assistance`. They receive a short, personal response:
+
+```text
+Hi! I'm doing well, thanks for asking. Is there a product you would like me to
+help you find, or is there anything else I can help you with?
+```
+
+Casual responses do not expose plans, artifacts, intent labels, FastAPI, or
+LangGraph details.
+
+## 12. Add To Cart
+
+For:
+
+```text
+Add Blue Running Shoe to my cart.
+```
+
+the model selects `add_to_cart`. It can ask for missing color, size, or quantity.
+`cart_tool` then:
+
+- Creates a cart item.
+- Stores name, URL, price, currency, color, size, and quantity.
+- Calculates line totals when price is known.
+- Merges identical product variants.
+- Calculates a subtotal when all item prices are known.
+- Returns the updated cart in `artifacts.cart`.
+
+The browser UI copies `artifacts.cart` to `context.cart` for the next request.
+
+## 13. Checkout And Order Placement
+
+For:
+
+```text
+Checkout my cart and place the order.
+```
+
+the model selects `checkout`.
+
+The graph collects:
+
+- Shipping name.
+- Street address.
+- City.
+- State or region.
+- Postal code.
+- Country.
+- Contact email.
+
+It never asks for:
+
+- Raw card numbers.
+- Bank details.
+- Passwords.
+- PINs or security codes.
+
+After all shipping details are complete, the graph asks the final question:
+
+```json
+{
+  "id": "confirm_order",
+  "type": "yes_no",
+  "options": ["yes", "no"]
+}
+```
+
+Behavior:
+
+- `yes`: place the order through the configured gateway.
+- `no`: cancel placement and keep the cart.
+- Missing confirmation: deterministic checkout code refuses placement.
+
+## 14. Automatic Ordering Safety
+
+"Automatic placement" means the order tool runs immediately after the user gives
+explicit final confirmation. The model cannot bypass this rule.
+
+The included `DemoOrderGateway`:
+
+- Creates a demo order ID.
+- Returns `status=simulated_placed`.
+- Masks the email in the receipt.
+- Clears the cart after confirmed placement.
+- Does not contact a retailer.
+- Does not charge a payment processor.
+
+A real implementation should replace it with an authenticated `OrderGateway`
+using retailer APIs and provider-hosted tokenized payment. Raw payment data
+should never pass through prompts or graph state.
+
+## 15. Browser Test UI
+
+The root UI supports:
+
+- Running arbitrary agent queries.
+- Loading a product-search example.
+- Loading an add-to-cart example.
+- Loading a checkout example.
+- Loading a calculator example.
+- Rendering model product results with one-click Add actions.
+- Showing cart items, quantity, variants, and subtotal outside raw JSON.
+- Starting checkout directly from the visible cart.
+- Showing the latest demo order or cancellation result.
+- Rendering dynamic human questions.
+- Continuing with accumulated answers.
+- Persisting previous products, cart, and last order in context.
+- Viewing status, artifacts, trace, and route history.
+- Opening Swagger and graph metadata.
+
+## 16. API Status Values
+
+| Status | Meaning |
+|---|---|
+| `ok` | The run completed successfully. |
+| `needs_input` | The client must answer human questions and resubmit. |
+| `refused` | The safety guard blocked the request. |
+| `error` | Configuration, model, validation, or tool execution failed. |
+
+## 17. Testing Strategy
+
+Automated tests inject `FakeProductModel` through the same model protocol. This
+keeps tests deterministic and avoids paid or network calls.
+
+Coverage includes:
+
+- Software delivery and documentation routes.
+- Calculator routing.
+- Personal greeting behavior.
+- Generic product intent classification.
+- Missing product information.
+- Shirt and shoe size interaction.
+- Different recommendations from different answers.
+- Strict and flexible budgets.
+- Add-to-cart size questions.
+- Cart quantity and subtotal.
+- Shipping collection.
+- Final confirmation question.
+- Confirmed demo placement.
+- Cart clearing after placement.
+- Cancellation after `no`.
+- Direct refusal to place without explicit confirmation.
+- Safety refusal.
+- Model configuration errors.
+- Root UI and API responses.
+- Graph node and edge metadata.
+
+Run:
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+## 18. Main Files
+
+| File | Purpose |
+|---|---|
+| `app/main.py` | FastAPI routes and application setup. |
+| `app/ui.py` | Browser testing interface and client-side context persistence. |
+| `app/agents/graph.py` | LangGraph registration, nodes, edges, and compilation. |
+| `app/agents/nodes.py` | Node behavior, routing, cart, checkout, and synthesis. |
+| `app/agents/product_model.py` | Intent schema, Gemini/OpenAI providers, structured outputs, and grounded search. |
+| `app/agents/commerce.py` | Order gateway protocol and safe demo gateway. |
+| `app/agents/state.py` | Shared graph-state types. |
+| `app/agents/tools.py` | Local research, calculator, and workspace tools. |
+| `app/agents/schemas.py` | FastAPI request and response schemas. |
+| `tests/conftest.py` | Injected fake model. |
+| `tests/test_agent_graph.py` | Workflow, API, cart, checkout, and safety tests. |
+
+## 19. Configuration
+
+```dotenv
+MODEL_PROVIDER=gemini
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-3.5-flash
+GEMINI_ENABLE_GOOGLE_SEARCH=true
+AGENT_USE_MODEL=true
+```
+
+- `MODEL_PROVIDER` defaults to `gemini`; `openai` remains optional.
+- `GEMINI_API_KEY` is required for Gemini model and commerce flows.
+- `GEMINI_MODEL` selects the Gemini model.
+- `GEMINI_ENABLE_GOOGLE_SEARCH` controls grounded product research.
+- `AGENT_USE_MODEL` controls optional non-product model synthesis.
+
+## 20. Production Roadmap
+
+- Add LangGraph checkpointing and persistent `thread_id` support.
+- Store runs, carts, orders, and confirmations in a database.
+- Add user authentication and cart ownership.
+- Add retailer or inventory APIs.
+- Replace the demo gateway with an authenticated order integration.
+- Use provider-hosted tokenized payment.
+- Revalidate price, variant, stock, shipping, and tax before confirmation.
+- Show a final itemized order summary.
+- Add idempotency keys to prevent duplicate orders.
+- Add rate limits, timeouts, retries, and circuit breakers.
+- Add secret management and approved retailer policies.
+- Add structured logs, request IDs, token cost, latency, and tool-use metrics.
+- Add prompt and model versioning.
+- Add intent, grounding, broken-link, and checkout evaluation datasets.
+
+This file is the complete project overview. The other documents provide deeper
+API examples, architecture notes, graph tables, and implementation roadmap.

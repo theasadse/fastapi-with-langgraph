@@ -7,11 +7,14 @@ from langgraph.graph import END, START, StateGraph
 
 from app.agents.nodes import (
     calculator_tool_node,
+    cart_tool_node,
+    checkout_tool_node,
     code_tool_node,
     critic_node,
     finalize_node,
     human_clarification_node,
     intake_node,
+    model_analyzer_node,
     planner_node,
     product_size_clarification_node,
     product_tool_node,
@@ -19,6 +22,8 @@ from app.agents.nodes import (
     research_tool_node,
     route_after_critic,
     route_after_human_clarification,
+    route_after_model_analysis,
+    route_after_action_tool,
     route_after_product_size_clarification,
     route_after_safety,
     route_tools,
@@ -31,15 +36,19 @@ from app.agents.state import AgentState
 GRAPH_NODES = [
     {
         "id": "intake",
-        "purpose": "Normalize the raw user request and infer the broad intent.",
+        "purpose": "Normalize the raw user request before model analysis.",
     },
     {
         "id": "safety_guard",
         "purpose": "Block disallowed requests before planning or tool use.",
     },
     {
+        "id": "model_analyzer",
+        "purpose": "Use structured model output to infer intent, constraints, and missing questions.",
+    },
+    {
         "id": "planner",
-        "purpose": "Create the work plan and choose which tools are needed.",
+        "purpose": "Create the work plan and choose tools from the model-derived intent.",
     },
     {
         "id": "human_clarification",
@@ -67,7 +76,15 @@ GRAPH_NODES = [
     },
     {
         "id": "product_tool",
-        "purpose": "Search the sample product catalog with human preferences.",
+        "purpose": "Use the model and optional web search to generate sourced products.",
+    },
+    {
+        "id": "cart_tool",
+        "purpose": "Add a model-resolved product and variant to the current cart.",
+    },
+    {
+        "id": "checkout_tool",
+        "purpose": "Place a confirmed order through the configured order gateway.",
     },
     {
         "id": "synthesize",
@@ -83,15 +100,17 @@ GRAPH_NODES = [
     },
     {
         "id": "finalize",
-        "purpose": "Return either the final answer or a refusal message.",
+        "purpose": "Return success, human input, refusal, or error results.",
     },
 ]
 
 GRAPH_EDGES = [
     {"from": "START", "to": "intake", "condition": "always"},
     {"from": "intake", "to": "safety_guard", "condition": "always"},
-    {"from": "safety_guard", "to": "planner", "condition": "allowed"},
+    {"from": "safety_guard", "to": "model_analyzer", "condition": "allowed"},
     {"from": "safety_guard", "to": "finalize", "condition": "refused"},
+    {"from": "model_analyzer", "to": "planner", "condition": "model analysis succeeds"},
+    {"from": "model_analyzer", "to": "finalize", "condition": "model analysis fails"},
     {"from": "planner", "to": "human_clarification", "condition": "always"},
     {"from": "human_clarification", "to": "finalize", "condition": "missing human input"},
     {"from": "human_clarification", "to": "product_size_clarification", "condition": "base product context is complete"},
@@ -101,11 +120,18 @@ GRAPH_EDGES = [
     {"from": "tool_router", "to": "calculator_tool", "condition": "next tool is calculator"},
     {"from": "tool_router", "to": "code_tool", "condition": "next tool is code"},
     {"from": "tool_router", "to": "product_tool", "condition": "next tool is product"},
+    {"from": "tool_router", "to": "cart_tool", "condition": "next tool is cart"},
+    {"from": "tool_router", "to": "checkout_tool", "condition": "next tool is checkout"},
     {"from": "tool_router", "to": "synthesize", "condition": "no pending tools"},
     {"from": "research_tool", "to": "tool_router", "condition": "always"},
     {"from": "calculator_tool", "to": "tool_router", "condition": "always"},
     {"from": "code_tool", "to": "tool_router", "condition": "always"},
-    {"from": "product_tool", "to": "tool_router", "condition": "always"},
+    {"from": "product_tool", "to": "tool_router", "condition": "model product search succeeds"},
+    {"from": "product_tool", "to": "finalize", "condition": "model product search fails"},
+    {"from": "cart_tool", "to": "tool_router", "condition": "cart update succeeds"},
+    {"from": "cart_tool", "to": "finalize", "condition": "cart update fails"},
+    {"from": "checkout_tool", "to": "tool_router", "condition": "checkout succeeds or is cancelled"},
+    {"from": "checkout_tool", "to": "finalize", "condition": "checkout validation fails"},
     {"from": "synthesize", "to": "critic", "condition": "always"},
     {"from": "critic", "to": "repair", "condition": "critique needs revision"},
     {"from": "critic", "to": "finalize", "condition": "critique passes or max revisions reached"},
@@ -116,8 +142,10 @@ GRAPH_EDGES = [
 GRAPH_MERMAID = """flowchart TD
     START([START]) --> intake
     intake --> safety_guard
-    safety_guard -- allowed --> planner
+    safety_guard -- allowed --> model_analyzer
     safety_guard -- refused --> finalize
+    model_analyzer -- success --> planner
+    model_analyzer -- error --> finalize
     planner --> human_clarification
     human_clarification -- missing input --> finalize
     human_clarification -- enough base context --> product_size_clarification
@@ -127,11 +155,18 @@ GRAPH_MERMAID = """flowchart TD
     tool_router -- calculator --> calculator_tool
     tool_router -- code --> code_tool
     tool_router -- product --> product_tool
+    tool_router -- cart --> cart_tool
+    tool_router -- checkout --> checkout_tool
     tool_router -- no pending tools --> synthesize
     research_tool --> tool_router
     calculator_tool --> tool_router
     code_tool --> tool_router
-    product_tool --> tool_router
+    product_tool -- success --> tool_router
+    product_tool -- error --> finalize
+    cart_tool -- success --> tool_router
+    cart_tool -- error --> finalize
+    checkout_tool -- success or cancelled --> tool_router
+    checkout_tool -- error --> finalize
     synthesize --> critic
     critic -- needs revision --> repair
     repair --> critic
@@ -145,6 +180,7 @@ def create_agent_graph() -> Any:
 
     workflow.add_node("intake", intake_node)
     workflow.add_node("safety_guard", safety_guard_node)
+    workflow.add_node("model_analyzer", model_analyzer_node)
     workflow.add_node("planner", planner_node)
     workflow.add_node("human_clarification", human_clarification_node)
     workflow.add_node("product_size_clarification", product_size_clarification_node)
@@ -153,6 +189,8 @@ def create_agent_graph() -> Any:
     workflow.add_node("calculator_tool", calculator_tool_node)
     workflow.add_node("code_tool", code_tool_node)
     workflow.add_node("product_tool", product_tool_node)
+    workflow.add_node("cart_tool", cart_tool_node)
+    workflow.add_node("checkout_tool", checkout_tool_node)
     workflow.add_node("synthesize", synthesize_node)
     workflow.add_node("critic", critic_node)
     workflow.add_node("repair", repair_node)
@@ -164,8 +202,16 @@ def create_agent_graph() -> Any:
         "safety_guard",
         route_after_safety,
         {
-            "plan": "planner",
+            "analyze": "model_analyzer",
             "refuse": "finalize",
+        },
+    )
+    workflow.add_conditional_edges(
+        "model_analyzer",
+        route_after_model_analysis,
+        {
+            "plan": "planner",
+            "error": "finalize",
         },
     )
     workflow.add_edge("planner", "human_clarification")
@@ -193,13 +239,38 @@ def create_agent_graph() -> Any:
             "calculator": "calculator_tool",
             "code": "code_tool",
             "product": "product_tool",
+            "cart": "cart_tool",
+            "checkout": "checkout_tool",
             "synthesize": "synthesize",
         },
     )
     workflow.add_edge("research_tool", "tool_router")
     workflow.add_edge("calculator_tool", "tool_router")
     workflow.add_edge("code_tool", "tool_router")
-    workflow.add_edge("product_tool", "tool_router")
+    workflow.add_conditional_edges(
+        "product_tool",
+        route_after_action_tool,
+        {
+            "continue": "tool_router",
+            "error": "finalize",
+        },
+    )
+    workflow.add_conditional_edges(
+        "cart_tool",
+        route_after_action_tool,
+        {
+            "continue": "tool_router",
+            "error": "finalize",
+        },
+    )
+    workflow.add_conditional_edges(
+        "checkout_tool",
+        route_after_action_tool,
+        {
+            "continue": "tool_router",
+            "error": "finalize",
+        },
+    )
     workflow.add_edge("synthesize", "critic")
     workflow.add_conditional_edges(
         "critic",

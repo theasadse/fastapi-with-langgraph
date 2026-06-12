@@ -21,22 +21,41 @@ class LocalHeuristicModel:
         return "\n".join(useful_lines)
 
 
-class LangChainChatModel:
-    source = "openai"
+class GeminiTextModel:
+    source = "gemini"
 
-    def __init__(self, model_name: str) -> None:
-        from langchain_openai import ChatOpenAI
+    def __init__(self, api_key: str, model_name: str) -> None:
+        from google import genai
 
-        self._model = ChatOpenAI(model=model_name, temperature=0.2)
+        self._client = genai.Client(api_key=api_key)
+        self._model_name = model_name
 
     def generate(self, system_prompt: str, user_prompt: str) -> str:
-        response = self._model.invoke(
-            [
-                ("system", system_prompt),
-                ("user", user_prompt),
-            ]
+        response = self._client.models.generate_content(
+            model=self._model_name,
+            contents=f"{system_prompt}\n\n{user_prompt}",
         )
-        return str(response.content)
+        return str(response.text or "")
+
+
+class OpenAITextModel:
+    source = "openai"
+
+    def __init__(self, api_key: str, model_name: str) -> None:
+        from openai import OpenAI
+
+        self._client = OpenAI(api_key=api_key)
+        self._model_name = model_name
+
+    def generate(self, system_prompt: str, user_prompt: str) -> str:
+        response = self._client.responses.create(
+            model=self._model_name,
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+        return response.output_text
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -48,14 +67,36 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 @lru_cache(maxsize=1)
 def get_model_client() -> ModelClient:
-    use_openai = _env_flag("AGENT_USE_OPENAI")
-    model_name = os.getenv("OPENAI_MODEL", "").strip()
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    use_model = _env_flag(
+        "AGENT_USE_MODEL",
+        default=_env_flag("AGENT_USE_OPENAI"),
+    )
+    provider = os.getenv("MODEL_PROVIDER", "gemini").strip().lower() or "gemini"
 
-    if not use_openai or not model_name or not api_key:
+    if not use_model:
         return LocalHeuristicModel()
 
-    try:
-        return LangChainChatModel(model_name=model_name)
-    except ImportError:
-        return LocalHeuristicModel()
+    if provider == "gemini":
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        model_name = (
+            os.getenv("GEMINI_MODEL", "gemini-3.5-flash").strip()
+            or "gemini-3.5-flash"
+        )
+        if not api_key:
+            return LocalHeuristicModel()
+        try:
+            return GeminiTextModel(api_key=api_key, model_name=model_name)
+        except ImportError:
+            return LocalHeuristicModel()
+
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        model_name = os.getenv("OPENAI_MODEL", "gpt-5.5").strip() or "gpt-5.5"
+        if not api_key:
+            return LocalHeuristicModel()
+        try:
+            return OpenAITextModel(api_key=api_key, model_name=model_name)
+        except ImportError:
+            return LocalHeuristicModel()
+
+    return LocalHeuristicModel()
