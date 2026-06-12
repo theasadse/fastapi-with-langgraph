@@ -334,6 +334,8 @@ def render_test_ui() -> str:
           <div class="button-row">
             <button class="primary" type="submit" id="runButton">Run agent</button>
             <button type="button" id="productSampleButton">Load product sample</button>
+            <button type="button" id="cartSampleButton">Add to cart</button>
+            <button type="button" id="checkoutSampleButton">Checkout</button>
             <button type="button" id="sampleButton">Load calculator sample</button>
             <button type="button" id="clearButton">Clear response</button>
           </div>
@@ -398,6 +400,7 @@ def render_test_ui() -> str:
       statusValue.textContent = data.status || "ok";
       routeCount.textContent = Array.isArray(data.route_history) ? data.route_history.length : "0";
       traceCount.textContent = Array.isArray(data.trace) ? data.trace.length : "0";
+      persistCommerceArtifacts(data);
       renderHumanQuestions(data);
     }
 
@@ -430,6 +433,34 @@ def render_test_ui() -> str:
 
     function writeContextValue(value) {
       context.value = JSON.stringify(value, null, 2);
+    }
+
+    function persistCommerceArtifacts(data) {
+      const artifacts = data && data.artifacts ? data.artifacts : {};
+      if (!artifacts.products && !artifacts.cart && !artifacts.order) {
+        return;
+      }
+
+      const contextValue = readContextValue();
+      if (artifacts.products) {
+        contextValue.previous_products = artifacts.products;
+      }
+      if (artifacts.cart) {
+        contextValue.cart = artifacts.cart;
+      }
+      if (artifacts.order) {
+        contextValue.last_order = artifacts.order;
+      }
+      writeContextValue(contextValue);
+    }
+
+    function startScenario(queryText, scenarioName) {
+      const contextValue = readContextValue();
+      delete contextValue.human_answers;
+      query.value = queryText;
+      scenario.value = scenarioName;
+      writeContextValue(contextValue);
+      hideHumanQuestions();
     }
 
     function createQuestionControl(question) {
@@ -569,6 +600,14 @@ def render_test_ui() -> str:
       context.value = JSON.stringify({ source: "test-ui", priority: "human-in-loop-demo" }, null, 2);
       scenario.value = "product-human-input";
       hideHumanQuestions();
+    });
+
+    document.querySelector("#cartSampleButton").addEventListener("click", () => {
+      startScenario("Add Blue Running Shoe to my cart.", "add-to-cart");
+    });
+
+    document.querySelector("#checkoutSampleButton").addEventListener("click", () => {
+      startScenario("Checkout my cart and place the order.", "checkout");
     });
 
     continueButton.addEventListener("click", async () => {

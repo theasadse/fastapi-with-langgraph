@@ -1,31 +1,38 @@
 # FastAPI With LangGraph
 
-A complete example project that combines FastAPI with a multi-step LangGraph
-agent. The agent is intentionally more advanced than a hello-world workflow: it
-normalizes the request, checks safety, plans work, routes through local tools,
-drafts an answer, critiques the draft, repairs weak drafts, and finalizes the
-response.
+A model-backed LangGraph example with FastAPI, a browser test UI, structured
+OpenAI outputs, optional live product web search, human clarification, tool
+routing, cart actions, confirmed checkout, critique, repair, and traceable graph
+state.
+
+The production product flow contains no sample catalog. The model analyzes the
+request, generates missing questions, researches products, and returns typed
+recommendations.
 
 ## Project Structure
 
 ```text
 .
 |-- app/
-|   |-- main.py                 # FastAPI application and HTTP endpoints
-|   |-- agents/
-|   |   |-- graph.py            # LangGraph nodes, edges, and compiled graph
-|   |   |-- nodes.py            # Agent node functions
-|   |   |-- tools.py            # Local research, calculator, and code tools
-|   |   |-- state.py            # Shared graph state schema
-|   |   |-- schemas.py          # API request and response models
-|   |   `-- llm.py              # Optional OpenAI-backed model adapter
-|   `-- ui.py                   # Small browser UI for manual agent testing
+|   |-- main.py                    # FastAPI app and HTTP endpoints
+|   |-- ui.py                      # Small browser UI for manual testing
+|   `-- agents/
+|       |-- graph.py               # LangGraph nodes, edges, and compiled graph
+|       |-- nodes.py               # Node behavior and routing functions
+|       |-- product_model.py       # OpenAI structured analysis and product search
+|       |-- commerce.py            # Order gateway protocol and safe demo gateway
+|       |-- llm.py                 # Optional non-product OpenAI synthesis
+|       |-- tools.py               # Research, calculator, and workspace tools
+|       |-- state.py               # Shared graph state
+|       `-- schemas.py             # FastAPI request and response models
 |-- docs/
-|   |-- ARCHITECTURE.md         # File-by-file and runtime overview
-|   |-- API_TESTING.md          # UI, Swagger, curl, and CRUD-style API notes
-|   |-- NODES_AND_EDGES.md      # Node and edge connection guide
-|   `-- TOPICS.md               # Complete list of covered topics
+|   |-- ARCHITECTURE.md
+|   |-- API_TESTING.md
+|   |-- MODEL_ROADMAP.md
+|   |-- NODES_AND_EDGES.md
+|   `-- TOPICS.md
 |-- tests/
+|   |-- conftest.py                # Injected fake model for offline tests
 |   `-- test_agent_graph.py
 |-- pyproject.toml
 `-- .env.example
@@ -36,112 +43,125 @@ response.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[test]"
-```
-
-The project runs without an external LLM by default. It uses deterministic local
-logic so you can learn the graph flow without paying for API calls.
-
-To enable an OpenAI-backed synthesis step:
-
-```bash
 pip install -e ".[openai,test]"
 cp .env.example .env
 ```
 
-Then set `AGENT_USE_OPENAI=true`, `OPENAI_API_KEY`, and `OPENAI_MODEL` in
-`.env` or your shell environment.
+Set your key in `.env`:
 
-## Run The API
+```dotenv
+OPENAI_API_KEY=your-key
+OPENAI_MODEL=gpt-5.5
+OPENAI_ENABLE_WEB_SEARCH=true
+AGENT_USE_OPENAI=true
+```
+
+`OPENAI_API_KEY` is required for request analysis and product recommendations.
+`OPENAI_ENABLE_WEB_SEARCH=true` lets the model research current retailer and
+product pages. `AGENT_USE_OPENAI` only controls optional non-product synthesis.
+
+## Run
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Open the generated API docs at:
+- Browser UI: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+- Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Graph metadata: [http://127.0.0.1:8000/agent/graph](http://127.0.0.1:8000/agent/graph)
 
-```text
-http://127.0.0.1:8000/docs
-```
+## Model Product Flow
 
-Open the small browser test UI at:
-
-```text
-http://127.0.0.1:8000/
-```
-
-## Try The Agent
+First request:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/agent/run \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "Create a FastAPI and LangGraph project, explain the files, and document the nodes and edges.",
-    "max_revisions": 2
+    "query": "Find a product under 50 dollars.",
+    "max_revisions": 1
   }'
 ```
 
-Useful endpoints:
+The model typically returns questions for product type, color, and whether the
+budget is strict. Send the same query again with the answers:
 
-- `GET /`: browser test UI for running the agent.
-- `GET /health`: service health check.
-- `GET /agent/graph`: static graph metadata and Mermaid diagram.
-- `POST /agent/run`: creates a new agent run and returns the answer.
+```bash
+curl -X POST http://127.0.0.1:8000/agent/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Find a product under 50 dollars.",
+    "context": {
+      "human_answers": {
+        "product_type": "running shoe",
+        "color": "blue",
+        "strict_budget": "yes"
+      }
+    },
+    "max_revisions": 1
+  }'
+```
 
-## Human Interaction Example
+If size is still missing, the graph returns `needs_input` again. After size is
+provided, the product node performs model research and returns products in
+`artifacts.products.matches`, including reasons, prices when supported, source
+URLs, and verification caveats.
 
-For under-specified requests, the graph can stop and ask the human for more
-context. Try this in the browser UI:
+## Cart And Checkout Flow
+
+The model also recognizes `add_to_cart` and `checkout`.
 
 ```text
-Find a product under 50 dollars.
+Add Blue Running Shoe to my cart.
 ```
 
-The first run returns `status: needs_input` with questions such as:
+The graph asks for missing variants such as shoe size, then `cart_tool` returns
+the updated cart in `artifacts.cart`. The browser UI copies that cart into the
+next request context.
 
-- Which product name or type should I search for?
-- Which color do you want?
-- Should I only show products under the stated budget?
-
-After you answer, the UI sends a second `POST /agent/run` request with:
-
-```json
-{
-  "context": {
-    "human_answers": {
-      "product_type": "backpack",
-      "color": "black",
-      "strict_budget": "yes"
-    }
-  }
-}
+```text
+Checkout my cart and place the order.
 ```
 
-Then the graph continues to the product tool and returns matching products from
-the sample catalog.
+Checkout happens in three stages:
 
-If the product is a `shirt` or `shoe`, the graph can pause a second time and ask
-for size before searching. For example, `product_type=shirt` asks for shirt size
-with `S`, `M`, `L`, or `XL`; `product_type=shoe` asks for shoe size with `7`,
-`8`, `9`, `10`, or `11`.
+1. Collect shipping name, address, city, region, postal code, country, and email.
+2. Ask the final yes/no question `confirm_order`.
+3. Run `checkout_tool` only when the answer is `yes`.
 
-Different answers produce different products. For example, blue speaker answers
-return `Compact Bluetooth Speaker`, blue backpack answers return
-`City Blue Backpack`, and flexible budget answers can return premium products
-with `over_budget: true`.
+The included `DemoOrderGateway` returns `status=simulated_placed`, clears the
+cart, and creates a demo order ID. It never requests card details and does not
+charge a retailer or payment processor. Replace this gateway with authenticated
+commerce and payment integrations for real ordering.
+
+## API Semantics
+
+`POST /agent/run` behaves like the create operation in a CRUD API: each call
+creates one graph execution. Human continuation is currently stateless. The
+client resends the original query plus accumulated `context.human_answers`,
+`context.previous_products`, and `context.cart`.
+
+Product completion can involve these model calls:
+
+1. Structured request analysis.
+2. Another structured analysis after each human response.
+3. Product research, optionally using OpenAI web search.
+4. Structured conversion of research into the product response schema.
+
+Tests do not call OpenAI. They inject a fake implementation of the same typed
+model protocol.
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [API Testing](docs/API_TESTING.md)
-- [Nodes and Edges](docs/NODES_AND_EDGES.md)
-- [Covered Topics](docs/TOPICS.md)
+- [API testing and human interaction](docs/API_TESTING.md)
+- [Model implementation roadmap](docs/MODEL_ROADMAP.md)
+- [Nodes and edges](docs/NODES_AND_EDGES.md)
+- [All covered topics](docs/TOPICS.md)
 
-## LangGraph References
+## References
 
-This project follows the current LangGraph `StateGraph` pattern with `START`,
-`END`, normal edges, and conditional edges:
-
-- [LangGraph graph API overview](https://docs.langchain.com/oss/python/langgraph/graph-api)
-- [LangGraph StateGraph reference](https://reference.langchain.com/python/langgraph/graph/state/StateGraph)
-- [add_conditional_edges reference](https://reference.langchain.com/python/langgraph/graph/state/StateGraph/add_conditional_edges)
+- [LangGraph graph API](https://docs.langchain.com/oss/python/langgraph/graph-api)
+- [OpenAI structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [OpenAI Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses)
+- [OpenAI web search tool](https://developers.openai.com/api/docs/guides/tools-web-search)

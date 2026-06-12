@@ -1,151 +1,135 @@
 # Covered Topics
 
-This project covers the following FastAPI, LangGraph, agent, UI, and testing
-topics.
+This index lists the concepts implemented or documented in the project.
 
-## Project Setup
+## FastAPI
 
-| Topic | Where To Read |
-| --- | --- |
-| Python virtual environment setup | `README.md` |
-| Installing project dependencies | `README.md` |
-| Optional OpenAI model configuration | `README.md`, `docs/ARCHITECTURE.md` |
-| Running Uvicorn locally | `README.md` |
-| Local-first deterministic agent behavior | `README.md`, `docs/ARCHITECTURE.md` |
+- Application creation and metadata.
+- Root browser UI route.
+- Health endpoint.
+- Typed POST request and response models.
+- Swagger/OpenAPI documentation.
+- HTTP exception boundary.
+- CRUD create-operation analogy and future run-resource endpoints.
 
-## FastAPI Topics
+## LangGraph
 
-| Topic | Where To Read |
-| --- | --- |
-| FastAPI application entrypoint | `app/main.py`, `docs/ARCHITECTURE.md` |
-| Health endpoint | `GET /health`, `docs/ARCHITECTURE.md` |
-| Graph metadata endpoint | `GET /agent/graph`, `docs/API_TESTING.md` |
-| Agent run endpoint | `POST /agent/run`, `docs/API_TESTING.md` |
-| Browser test UI endpoint | `GET /`, `docs/API_TESTING.md` |
-| Favicon handling | `GET /favicon.ico`, `app/main.py` |
-| Pydantic request and response schemas | `app/agents/schemas.py`, `docs/ARCHITECTURE.md` |
-| Swagger/OpenAPI testing | `http://127.0.0.1:8000/docs`, `docs/API_TESTING.md` |
+- `StateGraph` and typed shared state.
+- `START` and `END`.
+- Normal edges.
+- Conditional edges.
+- Tool router loop.
+- Human clarification branches.
+- Separate product size branch.
+- Critic and repair loop.
+- Revision limits.
+- Trace and route history.
+- Graph metadata and Mermaid diagram.
+- Stateless continuation today.
+- Checkpointer and `thread_id` roadmap.
 
-## LangGraph Topics
+## Model Integration
 
-| Topic | Where To Read |
-| --- | --- |
-| `StateGraph` workflow setup | `app/agents/graph.py`, `docs/NODES_AND_EDGES.md` |
-| `START` and `END` graph boundaries | `app/agents/graph.py`, `docs/NODES_AND_EDGES.md` |
-| Normal edges | `docs/NODES_AND_EDGES.md` |
-| Conditional edges | `docs/NODES_AND_EDGES.md` |
-| Node registration | `app/agents/graph.py` |
-| Graph compilation | `create_agent_graph()` in `app/agents/graph.py` |
-| Graph metadata and Mermaid diagram | `GET /agent/graph`, `docs/NODES_AND_EDGES.md` |
+- Provider-neutral model protocol.
+- OpenAI Responses API.
+- Structured outputs with Pydantic.
+- Model-derived intent.
+- Model-derived product constraints.
+- Model-generated human questions.
+- Model errors and configuration errors.
+- Optional OpenAI non-product synthesis.
+- Model name recorded in state and artifacts.
+- No production static product catalog.
 
-## Agent Workflow Topics
+## Product Agent
 
-| Topic | Node Or File |
-| --- | --- |
-| Intake and intent detection | `intake_node` |
-| Safety guard and refusal path | `safety_guard_node` |
-| Planning | `planner_node` |
-| Human clarification | `human_clarification_node` |
-| Product size clarification | `product_size_clarification_node` |
-| Tool routing | `tool_router_node` |
-| Research tool | `research_tool_node` |
-| Calculator tool | `calculator_tool_node` |
-| Code/workspace inspection tool | `code_tool_node` |
-| Product search tool | `product_tool_node` |
-| Answer synthesis | `synthesize_node` |
-| Critique and repair loop | `critic_node`, `repair_node` |
-| Final response handling | `finalize_node` |
+- Generic prompts such as `give me product under 50 dollars`.
+- Budget and currency extraction.
+- Strict or flexible budget confirmation.
+- Product type or name clarification.
+- Color clarification.
+- Shirt, clothing, shoe, and footwear size clarification.
+- Multiple human interaction rounds.
+- Different recommendations from different answers.
+- Exact matches and alternatives.
+- Prices, currencies, colors, sizes, and availability notes.
+- Over-budget marking.
+- Source URLs.
+- Price and stock verification caveats.
+- Live web search toggle.
 
-## Human-In-The-Loop Topics
+## Cart And Checkout
 
-| Topic | Where To Read |
-| --- | --- |
-| Returning `status: needs_input` | `docs/API_TESTING.md`, `docs/NODES_AND_EDGES.md` |
-| Structured human questions | `human_questions` in `AgentResponse` |
-| Text questions | `product_type` question |
-| Choice questions | `color` question |
-| Yes/no questions | `strict_budget` question |
-| Shirt size questions | `size` question for `product_type=shirt` |
-| Shoe size questions | `size` question for `product_type=shoe` |
-| Continuing with answers | `context.human_answers` in `docs/API_TESTING.md` |
-| UI follow-up form | `app/ui.py` |
+- `add_to_cart` intent.
+- `checkout` intent.
+- Product name, quantity, color, and size collection.
+- Cart item merging and subtotal calculation.
+- Cart persistence between stateless UI requests.
+- Shipping name, address, city, region, postal code, country, and email.
+- Final `confirm_order` yes/no checkpoint.
+- Deterministic confirmation enforcement outside the model.
+- Automatic demo placement after explicit yes.
+- Cancellation and unchanged cart after no.
+- Demo order IDs and masked receipt email.
+- Cart clearing after confirmed placement.
+- No card, bank, password, or security-code collection.
+- `OrderGateway` integration boundary for real commerce.
 
-## Product Search Topics
+## Conversational Behavior
 
-| Topic | Where To Read |
-| --- | --- |
-| Sample product catalog | `PRODUCT_CATALOG` in `app/agents/tools.py` |
-| Product type filtering | `search_products()` |
-| Color filtering | `search_products()` |
-| Shirt and shoe size filtering | `size` in `context.human_answers` |
-| Strict budget filtering | `strict_budget=yes` |
-| Flexible budget filtering | `strict_budget=no` |
-| Different products from different answers | `docs/API_TESTING.md` |
-| Over-budget product marking | `over_budget` in `artifacts.products.matches` |
-| Relaxed alternatives | `alternatives` in `artifacts.products` |
+- `general_assistance` intent for greetings and casual messages.
+- Warm, brief, personal replies.
+- Gentle offer to help find a product or assist with another request.
+- No internal plans, tools, intent labels, or graph details in casual replies.
 
-## API Testing Topics
+## API Calling And UI
 
-| Topic | Where To Read |
-| --- | --- |
-| CRUD-style API mapping | `docs/API_TESTING.md` |
-| Create operation for agent runs | `POST /agent/run` |
-| Read operation for health | `GET /health` |
-| Read operation for graph metadata | `GET /agent/graph` |
-| Swagger testing | `docs/API_TESTING.md` |
-| Curl testing | `docs/API_TESTING.md` |
-| Browser UI testing | `app/ui.py`, `docs/API_TESTING.md` |
+- `POST /agent/run` creates one execution.
+- `GET /agent/graph` returns graph structure.
+- Dynamic rendering of text, choice, and yes/no questions.
+- Accumulating `context.human_answers`.
+- Resubmitting the same query.
+- Status, trace, and route inspection.
+- Product and calculator samples.
+- Add-to-cart and checkout samples.
+- Error display.
 
-## UI Topics
+## Testing
 
-| Topic | Where To Read |
-| --- | --- |
-| Small test UI served by FastAPI | `app/ui.py` |
-| Running the agent from the browser | `Run agent` button |
-| Loading calculator sample | `Load calculator sample` button |
-| Loading product sample | `Load product sample` button |
-| Rendering human questions | `renderHumanQuestions()` in `app/ui.py` |
-| Continuing with human answers | `Continue with answers` button |
-| Viewing trace and route counts | API response panel |
+- Fake model dependency injection.
+- No paid or network model calls in tests.
+- Complex delivery route.
+- Calculator route.
+- Generic product intent.
+- Missing human input.
+- Shirt size pause and completion.
+- Shoe size pause and completion.
+- Different answers and recommendations.
+- Flexible budget behavior.
+- Safety refusal.
+- Graph node and edge metadata.
+- Root UI response.
+- Agent API response.
+- Missing model configuration.
+- Add-to-cart size checkpoint and cart creation.
+- Shipping collection before confirmation.
+- Confirmed demo placement and cart clearing.
+- Checkout cancellation.
 
-## State And Response Topics
+## Production Roadmap
 
-| Topic | Where To Read |
-| --- | --- |
-| Shared graph state | `AgentState` in `app/agents/state.py` |
-| Request schema | `AgentRequest` in `app/agents/schemas.py` |
-| Response schema | `AgentResponse` in `app/agents/schemas.py` |
-| Graph description schema | `GraphDescription` in `app/agents/schemas.py` |
-| Trace logging | `trace` state key |
-| Route history logging | `route_history` state key |
-| Tool artifacts | `artifacts` state key |
-| Human questions | `human_questions` state key |
+- Persistent LangGraph checkpoints.
+- Run and conversation IDs.
+- Retailer or inventory APIs.
+- Authentication and authorization.
+- Secret management.
+- Rate limiting.
+- Timeouts, retries, and circuit breakers.
+- Approved-source policies.
+- Observability and token-cost tracking.
+- Caching with freshness controls.
+- Prompt and model versioning.
+- Evaluation datasets and quality metrics.
 
-## Testing Topics
-
-| Topic | Where To Read |
-| --- | --- |
-| Graph route tests | `tests/test_agent_graph.py` |
-| Calculator route test | `test_agent_can_route_to_calculator_tool` |
-| Human input required test | `test_product_search_requests_human_input_when_context_is_missing` |
-| Generic product prompt test | `test_generic_product_prompts_share_product_search_flow` |
-| Human answer continuation test | `test_product_search_continues_after_human_answers` |
-| Shirt size follow-up test | `test_shirt_answer_requests_size_before_product_search` |
-| Shirt size result test | `test_shirt_search_uses_human_size_answer` |
-| Shoe size follow-up test | `test_shoe_answer_requests_size_before_product_search` |
-| Shoe size result test | `test_shoe_search_uses_human_size_answer` |
-| Different product result tests | `test_product_search_changes_results_from_human_answers` |
-| Flexible budget test | `test_product_search_budget_answer_changes_results` |
-| Refusal test | `test_agent_refuses_blocked_request` |
-| API route tests | `test_agent_run_api_creates_agent_execution` |
-| UI route test | `test_root_serves_browser_test_ui` |
-
-## Documentation Topics
-
-| Document | Covers |
-| --- | --- |
-| `README.md` | Setup, run commands, endpoint overview, human interaction example, docs links. |
-| `docs/ARCHITECTURE.md` | File roles, runtime flow, state, endpoints, model behavior, agent complexity. |
-| `docs/API_TESTING.md` | CRUD mapping, browser UI testing, Swagger, curl, human-in-loop API flow. |
-| `docs/NODES_AND_EDGES.md` | Graph diagram, nodes, edges, tool loop, human interaction loop, critique loop. |
-| `docs/TOPICS.md` | Complete topic index for the project. |
+See `ARCHITECTURE.md`, `API_TESTING.md`, `MODEL_ROADMAP.md`, and
+`NODES_AND_EDGES.md` for the detailed implementation.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
-ToolName = Literal["research", "calculator", "code", "product"]
+ToolName = Literal["research", "calculator", "code", "product", "cart", "checkout"]
 QuestionType = Literal["text", "choice", "yes_no"]
 AgentStatus = Literal["ok", "refused", "error", "needs_input"]
 
@@ -32,6 +32,9 @@ class AgentState(TypedDict, total=False):
     max_revisions: int
     normalized_request: str
     intent: str
+    model_analysis: dict[str, Any]
+    model_used: str
+    model_error: str
     safety: SafetyReport
     plan: list[str]
     pending_tools: list[ToolName]

@@ -21,22 +21,24 @@ class LocalHeuristicModel:
         return "\n".join(useful_lines)
 
 
-class LangChainChatModel:
+class OpenAITextModel:
     source = "openai"
 
-    def __init__(self, model_name: str) -> None:
-        from langchain_openai import ChatOpenAI
+    def __init__(self, api_key: str, model_name: str) -> None:
+        from openai import OpenAI
 
-        self._model = ChatOpenAI(model=model_name, temperature=0.2)
+        self._client = OpenAI(api_key=api_key)
+        self._model_name = model_name
 
     def generate(self, system_prompt: str, user_prompt: str) -> str:
-        response = self._model.invoke(
-            [
-                ("system", system_prompt),
-                ("user", user_prompt),
-            ]
+        response = self._client.responses.create(
+            model=self._model_name,
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
         )
-        return str(response.content)
+        return response.output_text
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -49,13 +51,13 @@ def _env_flag(name: str, default: bool = False) -> bool:
 @lru_cache(maxsize=1)
 def get_model_client() -> ModelClient:
     use_openai = _env_flag("AGENT_USE_OPENAI")
-    model_name = os.getenv("OPENAI_MODEL", "").strip()
+    model_name = os.getenv("OPENAI_MODEL", "gpt-5.5").strip() or "gpt-5.5"
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
 
-    if not use_openai or not model_name or not api_key:
+    if not use_openai or not api_key:
         return LocalHeuristicModel()
 
     try:
-        return LangChainChatModel(model_name=model_name)
+        return OpenAITextModel(api_key=api_key, model_name=model_name)
     except ImportError:
         return LocalHeuristicModel()

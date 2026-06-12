@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse
 
@@ -11,6 +12,8 @@ from app.agents.graph import (
 )
 from app.agents.schemas import AgentRequest, AgentResponse, GraphDescription
 from app.ui import render_test_ui
+
+load_dotenv()
 
 app = FastAPI(
     title="FastAPI With LangGraph",
